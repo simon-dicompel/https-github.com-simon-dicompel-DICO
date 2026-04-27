@@ -30,8 +30,7 @@ const dbConfig = {
 
 async function startServer() {
     const app = express();
-    // Prioriza WEBSITES_PORT se definido manualmente no Portal Azure, senão usa PORT padrão.
-    const PORT = process.env.WEBSITES_PORT || process.env.PORT || 3000;
+    const PORT = 3000;
 
     app.use(express.json());
 
@@ -40,34 +39,30 @@ async function startServer() {
 
     // --- LOGS DE INICIALIZAÇÃO PARA DIAGNÓSTICO ---
     console.log(`>> [INFO] Iniciando servidor...`);
-    console.log(`>> [INFO] Porta detectada: ${PORT}`);
+    console.log(`>> [INFO] Porta: ${PORT}`);
     console.log(`>> [INFO] Node Env: ${process.env.NODE_ENV}`);
     console.log(`>> [INFO] DB Server: ${dbConfig.server}`);
 
-    // Pool de conexão
+    // Pool de conexão (Global)
     let pool: sql.ConnectionPool | null = null;
     
-    try {
-        pool = await sql.connect(dbConfig);
-        console.log('>> Sucesso: Conectado ao Azure SQL Server (MSSQL)');
-    } catch (err: any) {
-        console.error('>> ERRO AO CONECTAR AO AZURE SQL SERVER:', err.message);
-    }
-
-    // --- DATABASE SETUP (Ensure tables exist) ---
-    const ensureTables = async () => {
-        if (!pool?.connected) return;
+    // Inicia conexão em background para não travar o startup
+    const connectDB = async () => {
         try {
-            // Ensure Notes column in Orders
-            await pool.request().query("IF COL_LENGTH('Orders', 'Notes') IS NULL ALTER TABLE Orders ADD Notes NVARCHAR(MAX)");
+            pool = await sql.connect(dbConfig);
+            console.log('>> Sucesso: Conectado ao Azure SQL Server (MSSQL)');
             
-            // Ensure profiles table exists or map to 'usuarios'
-            // Since there is already 'usuarios', let's stick to it.
+            // Ensure Tables
+            try {
+                await pool.request().query("IF COL_LENGTH('Orders', 'Notes') IS NULL ALTER TABLE Orders ADD Notes NVARCHAR(MAX)");
+            } catch (err: any) {
+                console.error("Setup error:", err.message);
+            }
         } catch (err: any) {
-            console.error("Setup error:", err.message);
+            console.error('>> ERRO AO CONECTAR AO AZURE SQL SERVER:', err.message);
         }
     };
-    await ensureTables();
+    connectDB();
 
     // --- HELPER MAPPERS ---
     
