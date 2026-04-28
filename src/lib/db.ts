@@ -15,17 +15,20 @@ const config: any = {
     process.env.DB_PASS || 
     process.env.DB_PASSWORD || 
     process.env.SENHA_DO_BANCO_DE_DADOS ||
+    process.env.SENHA_DO_SISTEMA ||
     'Dicompel!$$'
   ).trim(),
   database: (
     process.env.DATABASE_NAME || 
     process.env.DB_NAME || 
     process.env.NOME_DO_BANCO_DE_DADOS || 
+    process.env.NOME_BANCO_DADOS ||
     'configurador-produto'
   ).trim(),
   server: (
     process.env.DATABASE_SERVER || 
     process.env.DB_HOST || 
+    process.env.DB_SERVER ||
     'configurador-produto-sql.database.windows.net'
   ).trim().replace(/,$/, ''),
   port: parseInt(process.env.DB_PORT || '1433'),
