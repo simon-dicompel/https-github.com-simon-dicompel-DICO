@@ -55,82 +55,80 @@ const dbConfig = {
 };
 
 const app = express();
+const PORT = parseInt(process.env.PORT || '3000', 10);
 
-async function startServer() {
-    const PORT = parseInt(process.env.PORT || '3000', 10);
+// --- LOGS DE INICIALIZAÇÃO PARA DIAGNÓSTICO ---
+console.log(`>> [INFO] Iniciando servidor...`);
+console.log(`>> [INFO] Porta: ${PORT}`);
+console.log(`>> [INFO] Node Env: ${process.env.NODE_ENV}`);
+console.log(`>> [INFO] DB Server: ${dbConfig.server}`);
 
-    app.use(express.json());
+app.use(express.json());
 
-    // FaviIcon bypass
-    app.get("/favicon.ico", (req, res) => res.status(204).end());
+// FaviIcon bypass
+app.get("/favicon.ico", (req, res) => res.status(204).end());
 
-    // --- LOGS DE INICIALIZAÇÃO PARA DIAGNÓSTICO ---
-    console.log(`>> [INFO] Iniciando servidor...`);
-    console.log(`>> [INFO] Porta: ${PORT}`);
-    console.log(`>> [INFO] Node Env: ${process.env.NODE_ENV}`);
-    console.log(`>> [INFO] DB Server: ${dbConfig.server}`);
+// Pool de conexão (Global)
+let pool: sql.ConnectionPool | null = null;
+let dbError: string | null = null;
 
-    // Pool de conexão (Global)
-    let pool: sql.ConnectionPool | null = null;
-    let dbError: string | null = null;
+// Função para obter o pool de conexão de forma segura
+const getPool = async () => {
+    if (pool && pool.connected) return pool;
     
-    // Função para obter o pool de conexão de forma segura
-    const getPool = async () => {
-        if (pool && pool.connected) return pool;
+    console.log(`>> [DB] Tentando conectar/reconectar ao servidor: ${dbConfig.server}`);
+    try {
+        pool = await sql.connect(dbConfig);
+        console.log('>> Sucesso: Conectado ao Azure SQL Server (MSSQL)');
+        dbError = null;
+        return pool;
+    } catch (err: any) {
+        dbError = err.message;
+        if (err.code === 'ETIMEOUT') {
+            dbError = "CONNECTION TIMEOUT: Provável bloqueio de Firewall no Azure SQL. Certifique-se de permitir 'Serviços do Azure' no painel do banco de dados.";
+        }
+        console.error('>> ERRO AO CONECTAR AO BANCO:', dbError);
+        pool = null;
+        throw err;
+    }
+};
+
+// Inicia conexão em background (quente), mas as rotas devem usar getPool()
+getPool().catch(err => console.error("Initial connection failed, will retry on request."));
+
+// DIAGNOSTIC ENDPOINT (Critical for debugging production)
+app.get("/api/db-check", async (req, res) => {
+    const startTime = Date.now();
+    try {
+        console.log(">> Iniciando diagnóstico de banco de dados...");
+        const currentPool = await getPool();
+        const result = await currentPool.request().query('SELECT GETDATE() as now, DB_NAME() as db, @@VERSION as version');
         
-        console.log(`>> [DB] Tentando conectar/reconectar ao servidor: ${dbConfig.server}`);
-        try {
-            pool = await sql.connect(dbConfig);
-            console.log('>> Sucesso: Conectado ao Azure SQL Server (MSSQL)');
-            dbError = null;
-            return pool;
-        } catch (err: any) {
-            dbError = err.message;
-            if (err.code === 'ETIMEOUT') {
-                dbError = "CONNECTION TIMEOUT: Provável bloqueio de Firewall no Azure SQL. Certifique-se de permitir 'Serviços do Azure' no painel do banco de dados.";
+        res.json({
+            status: 'success',
+            duration_ms: Date.now() - startTime,
+            server: dbConfig.server,
+            database: result.recordset[0].db,
+            env: {
+                user_present: !!dbConfig.user,
+                pass_present: !!dbConfig.password,
+                node_env: process.env.NODE_ENV
             }
-            console.error('>> ERRO AO CONECTAR AO BANCO:', dbError);
-            pool = null;
-            throw err;
-        }
-    };
+        });
+    } catch (err: any) {
+        console.error(">> Erro no diagnóstico:", err);
+        res.status(500).json({
+            status: 'error',
+            duration_ms: Date.now() - startTime,
+            message: err.message,
+            code: err.code, // Ex: 'ETIMEOUT' indica Firewall
+            state: err.state,
+            help: "Se o código for ETIMEOUT, verifique o Firewall do Azure para permitir o IP deste servidor."
+        });
+    }
+});
 
-    // Inicia conexão em background (quente), mas as rotas devem usar getPool()
-    getPool().catch(err => console.error("Initial connection failed, will retry on request."));
-
-    // DIAGNOSTIC ENDPOINT (Critical for debugging production)
-    app.get("/api/db-check", async (req, res) => {
-        const startTime = Date.now();
-        try {
-            console.log(">> Iniciando diagnóstico de banco de dados...");
-            const currentPool = await getPool();
-            const result = await currentPool.request().query('SELECT GETDATE() as now, DB_NAME() as db, @@VERSION as version');
-            
-            res.json({
-                status: 'success',
-                duration_ms: Date.now() - startTime,
-                server: dbConfig.server,
-                database: result.recordset[0].db,
-                env: {
-                    user_present: !!dbConfig.user,
-                    pass_present: !!dbConfig.password,
-                    node_env: process.env.NODE_ENV
-                }
-            });
-        } catch (err: any) {
-            console.error(">> Erro no diagnóstico:", err);
-            res.status(500).json({
-                status: 'error',
-                duration_ms: Date.now() - startTime,
-                message: err.message,
-                code: err.code, // Ex: 'ETIMEOUT' indica Firewall
-                state: err.state,
-                help: "Se o código for ETIMEOUT, verifique o Firewall do Azure para permitir o IP deste servidor."
-            });
-        }
-    });
-
-    // --- HELPER MAPPERS ---
+// --- HELPER MAPPERS ---
     
     const mapProduct = (p: any) => {
         const product = {
@@ -485,6 +483,7 @@ async function startServer() {
     });
 
 
+async function setupVite() {
     // --- VITE MIDDLEWARE ---
     if (process.env.NODE_ENV !== "production") {
         const vite = await createViteServer({
@@ -509,6 +508,6 @@ async function startServer() {
     }
 }
 
-startServer();
+setupVite();
 
 export default app;
