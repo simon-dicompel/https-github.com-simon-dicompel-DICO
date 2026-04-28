@@ -102,23 +102,30 @@ async function startServer() {
 
     // DIAGNOSTIC ENDPOINT (Critical for debugging production)
     app.get("/api/db-check", async (req, res) => {
+        const startTime = Date.now();
         try {
-            console.log(">> Checking DB connection explicitly...");
+            console.log(">> Iniciando diagnóstico de banco de dados...");
             const currentPool = await getPool();
-            const result = await currentPool.request().query('SELECT GETDATE() as now, DB_NAME() as db');
+            const result = await currentPool.request().query('SELECT GETDATE() as now, DB_NAME() as db, @@VERSION as version');
+            
             res.json({
                 status: 'success',
+                duration_ms: Date.now() - startTime,
                 server: dbConfig.server,
                 database: result.recordset[0].db,
-                time: result.recordset[0].now,
+                server_time: result.recordset[0].now,
+                sql_version: result.recordset[0].version,
                 env: process.env.NODE_ENV
             });
         } catch (err: any) {
+            console.error(">> Erro no diagnóstico:", err);
             res.status(500).json({
                 status: 'error',
+                duration_ms: Date.now() - startTime,
                 message: err.message,
-                code: err.code,
-                stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+                code: err.code, // Ex: 'ETIMEOUT' indica Firewall
+                state: err.state,
+                help: "Se o código for ETIMEOUT, verifique o Firewall do Azure para permitir o IP deste servidor."
             });
         }
     });
