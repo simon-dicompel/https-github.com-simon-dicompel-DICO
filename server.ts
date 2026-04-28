@@ -31,8 +31,9 @@ const dbConfig = {
     server: (
         process.env.DATABASE_SERVER || 
         process.env.DB_HOST || 
+        process.env.DB_SERVER ||
         'configurador-produto-sql.database.windows.net'
-    ).trim().replace(/,$/, ''),
+    ).trim().replace(/,$/, '').replace('tcp:', ''),
     database: (
         process.env.DATABASE_NAME || 
         process.env.DB_NAME || 
@@ -42,7 +43,7 @@ const dbConfig = {
     port: parseInt(process.env.DB_PORT || '1433'),
     options: {
         encrypt: true,
-        trustServerCertificate: false
+        trustServerCertificate: true
     },
     pool: {
         max: 10,
