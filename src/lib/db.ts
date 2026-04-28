@@ -2,7 +2,7 @@ import sql from 'mssql';
 
 const config: any = {
   user: (process.env.DB_USER || process.env.MSSQL_USER || 'adminsql').trim(),
-  password: (process.env.DB_PASS || process.env.MSSQL_PASSWORD || 'Xaviera%%').trim(),
+  password: (process.env.DB_PASS || process.env.MSSQL_PASSWORD || 'Dicompel!$$').trim(),
   database: (process.env.DB_NAME || process.env.MSSQL_DATABASE || 'configurador-produto').trim(),
   server: (process.env.DB_HOST || process.env.MSSQL_SERVER || 'configurador-produto-sql.database.windows.net').trim().replace(/,$/, ''),
   port: parseInt(process.env.DB_PORT || '1433'),

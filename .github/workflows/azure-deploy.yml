@@ -9,6 +9,7 @@ on:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    environment: Production
 
     steps:
       - uses: actions/checkout@v4
@@ -24,13 +25,6 @@ jobs:
 
       - name: Build application
         run: npm run build
-
-      - name: 'Check for Publish Profile'
-        run: |
-          if [ -z "${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}" ]; then
-            echo "::error::O segredo AZURE_WEBAPP_PUBLISH_PROFILE não foi configurado no GitHub! Leia as instruções no chat do AI Studio."
-            exit 1
-          fi
 
       - name: 'Deploy to Azure Web App'
         uses: azure/webapps-deploy@v3
