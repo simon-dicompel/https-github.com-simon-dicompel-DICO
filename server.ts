@@ -1,6 +1,6 @@
 import express from "express";
+import { createServer as createViteServer } from "vite";
 import path from "path";
-import fs from "fs";
 import { fileURLToPath } from "url";
 import sql from 'mssql';
 import dotenv from 'dotenv';
@@ -18,7 +18,6 @@ const dbConfig = {
         process.env.DB_USERNAME || 
         process.env.USUARIO_DO_BANCO_DE_DADOS || 
         process.env['USUÁRIO_DO_BANCO_DE_DADOS'] || 
-        process.env.USUARIO_SQL ||
         'adminsql'
     ).trim(),
     password: (
@@ -27,29 +26,23 @@ const dbConfig = {
         process.env.DB_PASS || 
         process.env.DB_PASSWORD || 
         process.env.SENHA_DO_BANCO_DE_DADOS ||
-        process.env.SENHA_DO_SISTEMA ||
-        process.env.DB_PASSWORD_SQL ||
         'Dicompel!$$'
     ).trim(),
     server: (
         process.env.DATABASE_SERVER || 
         process.env.DB_HOST || 
-        process.env.DB_SERVER ||
-        process.env.DB_HOSTNAME ||
         'configurador-produto-sql.database.windows.net'
-    ).trim().replace(/,$/, '').replace(/^tcp:/, ''),
+    ).trim().replace(/,$/, ''),
     database: (
         process.env.DATABASE_NAME || 
         process.env.DB_NAME || 
         process.env.NOME_DO_BANCO_DE_DADOS || 
-        process.env.NOME_BANCO_DADOS ||
-        process.env.DB_DATABASE ||
         'configurador-produto'
     ).trim(),
     port: parseInt(process.env.DB_PORT || '1433'),
     options: {
         encrypt: true,
-        trustServerCertificate: true
+        trustServerCertificate: false
     },
     pool: {
         max: 10,
@@ -61,31 +54,9 @@ const dbConfig = {
 const app = express();
 
 async function startServer() {
-    const PORT = Number(process.env.PORT) || 3000;
+    const PORT = process.env.PORT || 3000;
 
     app.use(express.json());
-
-    // --- VITE MIDDLEWARE ---
-    if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
-        try {
-            // Using a dynamic string to prevent static analysis by Vercel's bundler
-            const viteModule = "vite";
-            const { createServer: createViteServer } = await import(viteModule);
-            const vite = await createViteServer({
-                server: { middlewareMode: true },
-                appType: "spa",
-            });
-            app.use(vite.middlewares);
-        } catch (e) {
-            console.warn("Vite not found or failed to load. Skipping Vite middleware.");
-        }
-    } else {
-        // Enforce static serving in production (Vercel uses its own routing, but this is a fallback)
-        const distPath = path.join(process.cwd(), 'dist');
-        if (fs.existsSync(distPath)) {
-            app.use(express.static(distPath));
-        }
-    }
 
     // FaviIcon bypass
     app.get("/favicon.ico", (req, res) => res.status(204).end());
@@ -94,10 +65,7 @@ async function startServer() {
     console.log(`>> [INFO] Iniciando servidor...`);
     console.log(`>> [INFO] Porta: ${PORT}`);
     console.log(`>> [INFO] Node Env: ${process.env.NODE_ENV}`);
-    console.log(`>> [INFO] Vercel: ${process.env.VERCEL ? 'Sim' : 'Não'}`);
     console.log(`>> [INFO] DB Server: ${dbConfig.server}`);
-    console.log(`>> [INFO] DB User: ${dbConfig.user ? dbConfig.user.substring(0, 3) + '...' : 'MISSING'}`);
-    console.log(`>> [INFO] DB Name: ${dbConfig.database}`);
 
     // Pool de conexão (Global)
     let pool: sql.ConnectionPool | null = null;
@@ -478,9 +446,16 @@ async function startServer() {
     });
 
 
-    // --- VITE PRODUCTION FALLBACK ---
-    if (process.env.NODE_ENV === "production") {
+    // --- VITE MIDDLEWARE ---
+    if (process.env.NODE_ENV !== "production") {
+        const vite = await createViteServer({
+            server: { middlewareMode: true },
+            appType: "spa",
+        });
+        app.use(vite.middlewares);
+    } else {
         const distPath = path.join(process.cwd(), 'dist');
+        app.use(express.static(distPath));
         app.get('*', (req, res) => {
             res.sendFile(path.join(distPath, 'index.html'));
         });
