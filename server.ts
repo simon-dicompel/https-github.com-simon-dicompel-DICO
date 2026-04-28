@@ -12,7 +12,7 @@ const __dirname = path.dirname(__filename);
 
 // Configuração MSSQL
 const dbConfig = {
-    user: (process.env.DATABASE_USER || process.env.DB_USER || 'adminsql').trim(),
+    user: (process.env.DATABASE_USER || process.env.DB_USER || process.env.DB_USERNAME || 'adminsql').trim(),
     password: (process.env.DATABASE_PASSWORD || process.env.DATABASE_PASS || process.env.DB_PASS || process.env.DB_PASSWORD || 'Dicompel!$$').trim(),
     server: (process.env.DATABASE_SERVER || process.env.DB_HOST || 'configurador-produto-sql.database.windows.net').trim().replace(/,$/, ''),
     database: (process.env.DATABASE_NAME || process.env.DB_NAME || 'configurador-produto').trim(),
@@ -438,9 +438,11 @@ async function startServer() {
         });
     }
 
-    app.listen(PORT, "0.0.0.0", () => {
-        console.log(`Servidor rodando em porta ${PORT}`);
-    });
+    if (process.env.NODE_ENV !== "production") {
+        app.listen(PORT, "0.0.0.0", () => {
+            console.log(`Servidor rodando em porta ${PORT}`);
+        });
+    }
 }
 
 startServer();
