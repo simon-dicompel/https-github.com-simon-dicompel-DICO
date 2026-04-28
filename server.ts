@@ -13,7 +13,7 @@ const __dirname = path.dirname(__filename);
 // Configuração MSSQL
 const dbConfig = {
     user: (process.env.DATABASE_USER || process.env.DB_USER || 'adminsql').trim(),
-    password: (process.env.DATABASE_PASSWORD || process.env.DB_PASS || process.env.DB_PASSWORD || 'Dicompel!$$').trim(),
+    password: (process.env.DATABASE_PASSWORD || process.env.DATABASE_PASS || process.env.DB_PASS || process.env.DB_PASSWORD || 'Dicompel!$$').trim(),
     server: (process.env.DATABASE_SERVER || process.env.DB_HOST || 'configurador-produto-sql.database.windows.net').trim().replace(/,$/, ''),
     database: (process.env.DATABASE_NAME || process.env.DB_NAME || 'configurador-produto').trim(),
     port: parseInt(process.env.DB_PORT || '1433'),
