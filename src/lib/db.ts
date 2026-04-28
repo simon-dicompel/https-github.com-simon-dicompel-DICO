@@ -1,10 +1,33 @@
 import sql from 'mssql';
 
 const config: any = {
-  user: (process.env.DB_USER || process.env.MSSQL_USER || 'adminsql').trim(),
-  password: (process.env.DB_PASS || process.env.MSSQL_PASSWORD || 'Dicompel!$$').trim(),
-  database: (process.env.DB_NAME || process.env.MSSQL_DATABASE || 'configurador-produto').trim(),
-  server: (process.env.DB_HOST || process.env.MSSQL_SERVER || 'configurador-produto-sql.database.windows.net').trim().replace(/,$/, ''),
+  user: (
+    process.env.DATABASE_USER || 
+    process.env.DB_USER || 
+    process.env.DB_USERNAME || 
+    process.env.USUARIO_DO_BANCO_DE_DADOS || 
+    process.env['USUÁRIO_DO_BANCO_DE_DADOS'] || 
+    'adminsql'
+  ).trim(),
+  password: (
+    process.env.DATABASE_PASSWORD || 
+    process.env.DATABASE_PASS || 
+    process.env.DB_PASS || 
+    process.env.DB_PASSWORD || 
+    process.env.SENHA_DO_BANCO_DE_DADOS ||
+    'Dicompel!$$'
+  ).trim(),
+  database: (
+    process.env.DATABASE_NAME || 
+    process.env.DB_NAME || 
+    process.env.NOME_DO_BANCO_DE_DADOS || 
+    'configurador-produto'
+  ).trim(),
+  server: (
+    process.env.DATABASE_SERVER || 
+    process.env.DB_HOST || 
+    'configurador-produto-sql.database.windows.net'
+  ).trim().replace(/,$/, ''),
   port: parseInt(process.env.DB_PORT || '1433'),
   pool: {
     max: 10,

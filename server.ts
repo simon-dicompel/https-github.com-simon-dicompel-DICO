@@ -12,10 +12,33 @@ const __dirname = path.dirname(__filename);
 
 // Configuração MSSQL
 const dbConfig = {
-    user: (process.env.DATABASE_USER || process.env.DB_USER || process.env.DB_USERNAME || 'adminsql').trim(),
-    password: (process.env.DATABASE_PASSWORD || process.env.DATABASE_PASS || process.env.DB_PASS || process.env.DB_PASSWORD || 'Dicompel!$$').trim(),
-    server: (process.env.DATABASE_SERVER || process.env.DB_HOST || 'configurador-produto-sql.database.windows.net').trim().replace(/,$/, ''),
-    database: (process.env.DATABASE_NAME || process.env.DB_NAME || 'configurador-produto').trim(),
+    user: (
+        process.env.DATABASE_USER || 
+        process.env.DB_USER || 
+        process.env.DB_USERNAME || 
+        process.env.USUARIO_DO_BANCO_DE_DADOS || 
+        process.env['USUÁRIO_DO_BANCO_DE_DADOS'] || 
+        'adminsql'
+    ).trim(),
+    password: (
+        process.env.DATABASE_PASSWORD || 
+        process.env.DATABASE_PASS || 
+        process.env.DB_PASS || 
+        process.env.DB_PASSWORD || 
+        process.env.SENHA_DO_BANCO_DE_DADOS ||
+        'Dicompel!$$'
+    ).trim(),
+    server: (
+        process.env.DATABASE_SERVER || 
+        process.env.DB_HOST || 
+        'configurador-produto-sql.database.windows.net'
+    ).trim().replace(/,$/, ''),
+    database: (
+        process.env.DATABASE_NAME || 
+        process.env.DB_NAME || 
+        process.env.NOME_DO_BANCO_DE_DADOS || 
+        'configurador-produto'
+    ).trim(),
     port: parseInt(process.env.DB_PORT || '1433'),
     options: {
         encrypt: true,
@@ -31,7 +54,7 @@ const dbConfig = {
 const app = express();
 
 async function startServer() {
-    const PORT = process.env.PORT || 3000;
+    const PORT = Number(process.env.PORT) || 3000;
 
     app.use(express.json());
 
