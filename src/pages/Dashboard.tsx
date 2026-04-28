@@ -331,7 +331,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, refreshTrigger = 0 }
               <ShieldCheck className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-xs font-black uppercase text-slate-900 tracking-tight">Status do Banco Azure (PostgreSQL)</p>
+              <p className="text-xs font-black uppercase text-slate-900 tracking-tight">Status do Banco Azure (SQL Server)</p>
               <div className="flex items-center gap-2 mt-0.5">
                 <span className={`text-[10px] font-bold uppercase ${dbStatus.connection ? 'text-green-700' : 'text-red-700'}`}>
                   {dbStatus.connection ? 'Conectado com Sucesso' : dbStatus.database === 'pendente' ? 'Aguardando Configuração' : 'Erro de Conexão'}
