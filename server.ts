@@ -1,5 +1,4 @@
 import express from "express";
-import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
 import sql from 'mssql';
@@ -18,6 +17,7 @@ const dbConfig = {
         process.env.DB_USERNAME || 
         process.env.USUARIO_DO_BANCO_DE_DADOS || 
         process.env['USUÁRIO_DO_BANCO_DE_DADOS'] || 
+        process.env.USUARIO_SQL ||
         'adminsql'
     ).trim(),
     password: (
@@ -27,25 +27,28 @@ const dbConfig = {
         process.env.DB_PASSWORD || 
         process.env.SENHA_DO_BANCO_DE_DADOS ||
         process.env.SENHA_DO_SISTEMA ||
+        process.env.DB_PASSWORD_SQL ||
         'Dicompel!$$'
     ).trim(),
     server: (
         process.env.DATABASE_SERVER || 
         process.env.DB_HOST || 
         process.env.DB_SERVER ||
+        process.env.DB_HOSTNAME ||
         'configurador-produto-sql.database.windows.net'
-    ).trim().replace(/,$/, ''),
+    ).trim().replace(/,$/, '').replace(/^tcp:/, ''),
     database: (
         process.env.DATABASE_NAME || 
         process.env.DB_NAME || 
         process.env.NOME_DO_BANCO_DE_DADOS || 
         process.env.NOME_BANCO_DADOS ||
+        process.env.DB_DATABASE ||
         'configurador-produto'
     ).trim(),
     port: parseInt(process.env.DB_PORT || '1433'),
     options: {
         encrypt: true,
-        trustServerCertificate: false
+        trustServerCertificate: true // Alterado para true para facilitar conexão inicial
     },
     pool: {
         max: 10,
@@ -60,6 +63,24 @@ async function startServer() {
     const PORT = Number(process.env.PORT) || 3000;
 
     app.use(express.json());
+
+    // --- VITE MIDDLEWARE ---
+    if (process.env.NODE_ENV !== "production") {
+        try {
+            const { createServer: createViteServer } = await import("vite");
+            const vite = await createViteServer({
+                server: { middlewareMode: true },
+                appType: "spa",
+            });
+            app.use(vite.middlewares);
+        } catch (e) {
+            console.warn("Vite not found or failed to load. Skipping Vite middleware.");
+        }
+    } else {
+        const distPath = path.join(process.cwd(), 'dist');
+        app.use(express.static(distPath));
+        // A rota curinga deve ser a ÚLTIMA, mas aqui vamos colocá-la depois das APIs
+    }
 
     // FaviIcon bypass
     app.get("/favicon.ico", (req, res) => res.status(204).end());
@@ -449,16 +470,9 @@ async function startServer() {
     });
 
 
-    // --- VITE MIDDLEWARE ---
-    if (process.env.NODE_ENV !== "production") {
-        const vite = await createViteServer({
-            server: { middlewareMode: true },
-            appType: "spa",
-        });
-        app.use(vite.middlewares);
-    } else {
+    // --- VITE PRODUCTION FALLBACK ---
+    if (process.env.NODE_ENV === "production") {
         const distPath = path.join(process.cwd(), 'dist');
-        app.use(express.static(distPath));
         app.get('*', (req, res) => {
             res.sendFile(path.join(distPath, 'index.html'));
         });
