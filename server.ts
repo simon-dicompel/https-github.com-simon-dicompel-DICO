@@ -41,6 +41,8 @@ const dbConfig = {
         'configurador-produto'
     ).trim(),
     port: parseInt(process.env.DB_PORT || '1433'),
+    connectionTimeout: 5000, // Falha rápido no Vercel em vez de 500 (Timeout)
+    requestTimeout: 10000,
     options: {
         encrypt: true,
         trustServerCertificate: true
@@ -55,7 +57,7 @@ const dbConfig = {
 const app = express();
 
 async function startServer() {
-    const PORT = process.env.PORT || 3000;
+    const PORT = parseInt(process.env.PORT || '3000', 10);
 
     app.use(express.json());
 
@@ -81,17 +83,13 @@ async function startServer() {
             pool = await sql.connect(dbConfig);
             console.log('>> Sucesso: Conectado ao Azure SQL Server (MSSQL)');
             dbError = null;
-            
-            // Verificação básica de tabelas (apenas se necessário no primeiro connect)
-            try {
-                await pool.request().query("IF COL_LENGTH('Orders', 'Notes') IS NULL ALTER TABLE Orders ADD Notes NVARCHAR(MAX)");
-            } catch (err: any) {
-                console.error("Setup error:", err.message);
-            }
             return pool;
         } catch (err: any) {
             dbError = err.message;
-            console.error('>> ERRO AO CONECTAR AO AZURE SQL SERVER:', err.message);
+            if (err.code === 'ETIMEOUT') {
+                dbError = "CONNECTION TIMEOUT: Provável bloqueio de Firewall no Azure SQL. Certifique-se de permitir 'Serviços do Azure' no painel do banco de dados.";
+            }
+            console.error('>> ERRO AO CONECTAR AO BANCO:', dbError);
             pool = null;
             throw err;
         }
@@ -113,9 +111,11 @@ async function startServer() {
                 duration_ms: Date.now() - startTime,
                 server: dbConfig.server,
                 database: result.recordset[0].db,
-                server_time: result.recordset[0].now,
-                sql_version: result.recordset[0].version,
-                env: process.env.NODE_ENV
+                env: {
+                    user_present: !!dbConfig.user,
+                    pass_present: !!dbConfig.password,
+                    node_env: process.env.NODE_ENV
+                }
             });
         } catch (err: any) {
             console.error(">> Erro no diagnóstico:", err);
@@ -500,9 +500,13 @@ async function startServer() {
         });
     }
 
-    app.listen(PORT, "0.0.0.0", () => {
-        console.log(`Servidor rodando em porta ${PORT} (Env: ${process.env.NODE_ENV})`);
-    });
+    // No Vercel, o servidor é gerenciado pela plataforma.
+    // Só iniciamos o listen se não estivermos no ambiente Vercel/Produção
+    if (!process.env.VERCEL) {
+        app.listen(PORT, "0.0.0.0", () => {
+            console.log(`Servidor rodando em porta ${PORT} (Env: ${process.env.NODE_ENV})`);
+        });
+    }
 }
 
 startServer();
