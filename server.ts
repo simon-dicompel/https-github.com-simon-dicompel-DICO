@@ -100,6 +100,29 @@ async function startServer() {
     // Inicia conexão em background (quente), mas as rotas devem usar getPool()
     getPool().catch(err => console.error("Initial connection failed, will retry on request."));
 
+    // DIAGNOSTIC ENDPOINT (Critical for debugging production)
+    app.get("/api/db-check", async (req, res) => {
+        try {
+            console.log(">> Checking DB connection explicitly...");
+            const currentPool = await getPool();
+            const result = await currentPool.request().query('SELECT GETDATE() as now, DB_NAME() as db');
+            res.json({
+                status: 'success',
+                server: dbConfig.server,
+                database: result.recordset[0].db,
+                time: result.recordset[0].now,
+                env: process.env.NODE_ENV
+            });
+        } catch (err: any) {
+            res.status(500).json({
+                status: 'error',
+                message: err.message,
+                code: err.code,
+                stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+            });
+        }
+    });
+
     // --- HELPER MAPPERS ---
     
     const mapProduct = (p: any) => {
@@ -470,11 +493,9 @@ async function startServer() {
         });
     }
 
-    if (process.env.NODE_ENV !== "production") {
-        app.listen(PORT, "0.0.0.0", () => {
-            console.log(`Servidor rodando em porta ${PORT}`);
-        });
-    }
+    app.listen(PORT, "0.0.0.0", () => {
+        console.log(`Servidor rodando em porta ${PORT} (Env: ${process.env.NODE_ENV})`);
+    });
 }
 
 startServer();
