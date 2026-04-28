@@ -43,7 +43,7 @@ const config: any = {
   },
   options: {
     encrypt: true, // For Azure
-    trustServerCertificate: false // For Azure
+    trustServerCertificate: true // For Azure
   }
 };
 

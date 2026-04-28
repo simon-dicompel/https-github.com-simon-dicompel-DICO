@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import { fileURLToPath } from "url";
 import sql from 'mssql';
 import dotenv from 'dotenv';
@@ -48,7 +49,7 @@ const dbConfig = {
     port: parseInt(process.env.DB_PORT || '1433'),
     options: {
         encrypt: true,
-        trustServerCertificate: true // Alterado para true para facilitar conexão inicial
+        trustServerCertificate: true
     },
     pool: {
         max: 10,
@@ -65,9 +66,11 @@ async function startServer() {
     app.use(express.json());
 
     // --- VITE MIDDLEWARE ---
-    if (process.env.NODE_ENV !== "production") {
+    if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
         try {
-            const { createServer: createViteServer } = await import("vite");
+            // Using a dynamic string to prevent static analysis by Vercel's bundler
+            const viteModule = "vite";
+            const { createServer: createViteServer } = await import(viteModule);
             const vite = await createViteServer({
                 server: { middlewareMode: true },
                 appType: "spa",
@@ -77,9 +80,11 @@ async function startServer() {
             console.warn("Vite not found or failed to load. Skipping Vite middleware.");
         }
     } else {
+        // Enforce static serving in production (Vercel uses its own routing, but this is a fallback)
         const distPath = path.join(process.cwd(), 'dist');
-        app.use(express.static(distPath));
-        // A rota curinga deve ser a ÚLTIMA, mas aqui vamos colocá-la depois das APIs
+        if (fs.existsSync(distPath)) {
+            app.use(express.static(distPath));
+        }
     }
 
     // FaviIcon bypass
@@ -89,7 +94,10 @@ async function startServer() {
     console.log(`>> [INFO] Iniciando servidor...`);
     console.log(`>> [INFO] Porta: ${PORT}`);
     console.log(`>> [INFO] Node Env: ${process.env.NODE_ENV}`);
+    console.log(`>> [INFO] Vercel: ${process.env.VERCEL ? 'Sim' : 'Não'}`);
     console.log(`>> [INFO] DB Server: ${dbConfig.server}`);
+    console.log(`>> [INFO] DB User: ${dbConfig.user ? dbConfig.user.substring(0, 3) + '...' : 'MISSING'}`);
+    console.log(`>> [INFO] DB Name: ${dbConfig.database}`);
 
     // Pool de conexão (Global)
     let pool: sql.ConnectionPool | null = null;
