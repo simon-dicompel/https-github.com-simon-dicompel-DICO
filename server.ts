@@ -26,7 +26,7 @@ const dbConfig = {
         process.env.DB_PASS || 
         process.env.DB_PASSWORD || 
         process.env.SENHA_DO_BANCO_DE_DADOS ||
-        'Dicompel!$$'
+        'Xaviera%%'
     ).trim(),
     server: (
         process.env.DATABASE_SERVER || 
