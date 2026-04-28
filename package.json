@@ -4,11 +4,11 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx api/index.ts",
+    "dev": "tsx server.ts",
     "build": "vite build",
     "preview": "vite preview",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "start": "tsx api/index.ts"
+    "start": "tsx server.ts"
   },
   "dependencies": {
     "@google/genai": "^1.34.0",
@@ -25,7 +25,6 @@
     "tsx": "^4.21.0"
   },
   "devDependencies": {
-    "@rollup/rollup-linux-x64-gnu": "^4.60.2",
     "@types/express": "^5.0.6",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
