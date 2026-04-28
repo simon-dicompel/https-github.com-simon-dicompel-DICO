@@ -71,26 +71,33 @@ async function startServer() {
     let pool: sql.ConnectionPool | null = null;
     let dbError: string | null = null;
     
-    // Inicia conexão em background para não travar o startup
-    const connectDB = async () => {
-        console.log(`>> [DB] Tentando conectar ao servidor: ${dbConfig.server}`);
+    // Função para obter o pool de conexão de forma segura
+    const getPool = async () => {
+        if (pool && pool.connected) return pool;
+        
+        console.log(`>> [DB] Tentando conectar/reconectar ao servidor: ${dbConfig.server}`);
         try {
             pool = await sql.connect(dbConfig);
             console.log('>> Sucesso: Conectado ao Azure SQL Server (MSSQL)');
             dbError = null;
             
-            // Ensure Tables
+            // Verificação básica de tabelas (apenas se necessário no primeiro connect)
             try {
                 await pool.request().query("IF COL_LENGTH('Orders', 'Notes') IS NULL ALTER TABLE Orders ADD Notes NVARCHAR(MAX)");
             } catch (err: any) {
                 console.error("Setup error:", err.message);
             }
+            return pool;
         } catch (err: any) {
             dbError = err.message;
             console.error('>> ERRO AO CONECTAR AO AZURE SQL SERVER:', err.message);
+            pool = null;
+            throw err;
         }
     };
-    connectDB();
+
+    // Inicia conexão em background (quente), mas as rotas devem usar getPool()
+    getPool().catch(err => console.error("Initial connection failed, will retry on request."));
 
     // --- HELPER MAPPERS ---
     
@@ -134,8 +141,8 @@ async function startServer() {
     // --- LOGGING HELPER ---
     const executeQuery = async (query: string, params: {name: string, type: any, value: any}[] = []) => {
         console.log(`[SQL] Executing: ${query.substring(0, 100)}${query.length > 100 ? '...' : ''}`);
-        if (!pool?.connected) throw new Error("Database not connected");
-        const request = pool.request();
+        const currentPool = await getPool();
+        const request = currentPool.request();
         params.forEach(p => request.input(p.name, p.type, p.value));
         return request.query(query);
     };
@@ -143,11 +150,22 @@ async function startServer() {
     // --- API ROUTES ---
     
     app.get("/api/health", async (req, res) => {
-        const isConnected = !!(pool && pool.connected);
+        let isConnected = false;
+        try {
+            const currentPool = await getPool();
+            isConnected = !!(currentPool && currentPool.connected);
+            if (isConnected) {
+                await currentPool.request().query('SELECT 1');
+            }
+        } catch (err: any) {
+            isConnected = false;
+            dbError = err.message;
+        }
+
         const status = { 
             database: 'MSSQL', 
-            connection: isConnected, // Dashboard expects 'connection' boolean
-            connected: isConnected,  // Legacy fallback
+            connection: isConnected,
+            connected: isConnected,
             error: dbError,
             env_status: {
                 DB_USER: dbConfig.user ? 'OK' : 'MISSING',
@@ -155,24 +173,15 @@ async function startServer() {
             }
         };
         
-        if (isConnected) {
-            try { 
-                await pool!.request().query('SELECT 1'); 
-            } catch (err: any) { 
-                status.connection = false;
-                status.error = `Query failed: ${err.message}`; 
-            }
-        }
-        
         res.json(status);
     });
 
     // DB DIAGNOSTIC
     app.get("/api/db/diagnose/:table", async (req, res) => {
-        if (!pool?.connected) return res.status(503).json({ error: "DB Offline" });
         try {
+            const currentPool = await getPool();
             const table = req.params.table;
-            const result = await pool.request()
+            const result = await currentPool.request()
                 .input('table', sql.NVarChar, table)
                 .query("SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = @table");
             res.json(result.recordset);
@@ -193,10 +202,10 @@ async function startServer() {
     });
 
     app.post("/api/products", async (req, res) => {
-        if (!pool?.connected) return res.status(503).json({ error: "DB Offline" });
-        const { code, description, category, line, details, imageUrl } = req.body;
         try {
-            const result = await pool.request()
+            const currentPool = await getPool();
+            const { code, description, category, line, details, imageUrl } = req.body;
+            const result = await currentPool.request()
                 .input('code', sql.NVarChar, code)
                 .input('name', sql.NVarChar, description)
                 .input('category', sql.NVarChar, category)
@@ -213,10 +222,10 @@ async function startServer() {
     });
 
     app.put("/api/products/:id", async (req, res) => {
-        if (!pool?.connected) return res.status(503).json({ error: "DB Offline" });
-        const { code, description, category, line, details, imageUrl } = req.body;
         try {
-            const result = await pool.request()
+            const currentPool = await getPool();
+            const { code, description, category, line, details, imageUrl } = req.body;
+            const result = await currentPool.request()
                 .input('id', sql.UniqueIdentifier, req.params.id)
                 .input('code', sql.NVarChar, code)
                 .input('name', sql.NVarChar, description)
@@ -244,10 +253,9 @@ async function startServer() {
             return res.json({ id: '999', email: normalizedEmail, name: 'Admin Master', role: 'ADMIN' });
         }
 
-        if (!pool?.connected) return res.status(503).json({ error: "DB Offline" });
-        
         try {
-            const result = await pool.request()
+            const currentPool = await getPool();
+            const result = await currentPool.request()
                 .input('email', sql.NVarChar, normalizedEmail)
                 .input('password', sql.NVarChar, password)
                 .query('SELECT * FROM usuarios WHERE email = @email AND senha_hash = @password');
@@ -264,9 +272,9 @@ async function startServer() {
 
     // USERS
     app.get("/api/users", async (req, res) => {
-        if (!pool?.connected) return res.status(503).json({ error: "DB Offline" });
         try {
-            const result = await pool.request().query('SELECT * FROM usuarios ORDER BY nome');
+            const currentPool = await getPool();
+            const result = await currentPool.request().query('SELECT * FROM usuarios ORDER BY nome');
             res.json(result.recordset.map(mapUser));
         } catch (err: any) {
             res.status(500).json({ error: err.message });
@@ -274,11 +282,11 @@ async function startServer() {
     });
 
     app.post("/api/users", async (req, res) => {
-        if (!pool?.connected) return res.status(503).json({ error: "DB Offline" });
-        const { name, email, role, password } = req.body;
-        const profile = mapRoleToProfile(role);
         try {
-            const result = await pool.request()
+            const currentPool = await getPool();
+            const { name, email, role, password } = req.body;
+            const profile = mapRoleToProfile(role);
+            const result = await currentPool.request()
                 .input('nome', sql.NVarChar, name)
                 .input('email', sql.NVarChar, email)
                 .input('perfil', sql.NVarChar, profile)
@@ -291,11 +299,11 @@ async function startServer() {
     });
 
     app.put("/api/users/:id", async (req, res) => {
-        if (!pool?.connected) return res.status(503).json({ error: "DB Offline" });
-        const { name, email, role } = req.body;
-        const profile = mapRoleToProfile(role);
         try {
-            const result = await pool.request()
+            const currentPool = await getPool();
+            const { name, email, role } = req.body;
+            const profile = mapRoleToProfile(role);
+            const result = await currentPool.request()
                 .input('id', sql.Int, parseInt(req.params.id))
                 .input('nome', sql.NVarChar, name)
                 .input('email', sql.NVarChar, email)
@@ -308,9 +316,9 @@ async function startServer() {
     });
 
     app.delete("/api/users/:id", async (req, res) => {
-        if (!pool?.connected) return res.status(503).json({ error: "DB Offline" });
         try {
-            await pool.request().input('id', sql.Int, parseInt(req.params.id)).query('DELETE FROM usuarios WHERE id = @id');
+            const currentPool = await getPool();
+            await currentPool.request().input('id', sql.Int, parseInt(req.params.id)).query('DELETE FROM usuarios WHERE id = @id');
             res.status(204).end();
         } catch (err: any) {
             res.status(500).json({ error: err.message });
@@ -318,9 +326,9 @@ async function startServer() {
     });
 
     app.patch("/api/users/:id/password", async (req, res) => {
-        if (!pool?.connected) return res.status(503).json({ error: "DB Offline" });
         try {
-            await pool.request()
+            const currentPool = await getPool();
+            await currentPool.request()
                 .input('id', sql.Int, parseInt(req.params.id))
                 .input('password', sql.NVarChar, req.body.password)
                 .query('UPDATE usuarios SET senha_hash = @password WHERE id = @id');
@@ -332,14 +340,14 @@ async function startServer() {
 
     // ORDERS
     const fetchOrdersWithItems = async (query: string, inputs: any[] = []) => {
-        if (!pool?.connected) return [];
-        const request = pool.request();
+        const currentPool = await getPool();
+        const request = currentPool.request();
         inputs.forEach(i => request.input(i.name, i.type, i.value));
         const res = await request.query(query);
         const orders = res.recordset;
         
         for (const order of orders) {
-            const itemsRes = await pool.request()
+            const itemsRes = await currentPool.request()
                 .input('orderId', sql.UniqueIdentifier, order.OrderID)
                 .query('SELECT ProductID as id, ProductCode as code, ProductName as pName, Quantity as quantity FROM OrderItems WHERE OrderID = @orderId');
             order.items = itemsRes.recordset.map((it: any) => ({
@@ -379,10 +387,10 @@ async function startServer() {
     });
 
     app.post("/api/orders", async (req, res) => {
-        if (!pool?.connected) return res.status(503).json({ error: "DB Offline" });
+        const currentPool = await getPool();
         const { customerName, customerEmail, customerContact, representativeId, items, status, notes } = req.body;
         
-        const transaction = new sql.Transaction(pool);
+        const transaction = new sql.Transaction(currentPool);
         try {
             await transaction.begin();
             const orderRequest = new sql.Request(transaction);
@@ -421,9 +429,9 @@ async function startServer() {
     });
 
     app.patch("/api/orders/:id/status", async (req, res) => {
-        if (!pool?.connected) return res.status(503).json({ error: "DB Offline" });
         try {
-            await pool.request()
+            const currentPool = await getPool();
+            await currentPool.request()
                 .input('id', sql.UniqueIdentifier, req.params.id)
                 .input('status', sql.NVarChar, req.body.status)
                 .query('UPDATE Orders SET Status = @status WHERE OrderID = @id');
@@ -434,11 +442,11 @@ async function startServer() {
     });
 
     app.delete("/api/orders/:id", async (req, res) => {
-        if (!pool?.connected) return res.status(503).json({ error: "DB Offline" });
         try {
+            const currentPool = await getPool();
             // Delete items first
-            await pool.request().input('id', sql.UniqueIdentifier, req.params.id).query('DELETE FROM OrderItems WHERE OrderID = @id');
-            await pool.request().input('id', sql.UniqueIdentifier, req.params.id).query('DELETE FROM Orders WHERE OrderID = @id');
+            await currentPool.request().input('id', sql.UniqueIdentifier, req.params.id).query('DELETE FROM OrderItems WHERE OrderID = @id');
+            await currentPool.request().input('id', sql.UniqueIdentifier, req.params.id).query('DELETE FROM Orders WHERE OrderID = @id');
             res.status(204).end();
         } catch (err: any) {
             res.status(500).json({ error: err.message });
