@@ -45,12 +45,15 @@ async function startServer() {
 
     // Pool de conexão (Global)
     let pool: sql.ConnectionPool | null = null;
+    let dbError: string | null = null;
     
     // Inicia conexão em background para não travar o startup
     const connectDB = async () => {
+        console.log(`>> [DB] Tentando conectar ao servidor: ${dbConfig.server}`);
         try {
             pool = await sql.connect(dbConfig);
             console.log('>> Sucesso: Conectado ao Azure SQL Server (MSSQL)');
+            dbError = null;
             
             // Ensure Tables
             try {
@@ -59,6 +62,7 @@ async function startServer() {
                 console.error("Setup error:", err.message);
             }
         } catch (err: any) {
+            dbError = err.message;
             console.error('>> ERRO AO CONECTAR AO AZURE SQL SERVER:', err.message);
         }
     };
@@ -115,21 +119,27 @@ async function startServer() {
     // --- API ROUTES ---
     
     app.get("/api/health", async (req, res) => {
+        const isConnected = !!(pool && pool.connected);
         const status = { 
             database: 'MSSQL', 
-            connected: !!pool?.connected, 
-            error: null as string | null,
-            env: {
-                DATABASE_SERVER: process.env.DATABASE_SERVER ? 'SET' : 'MISSING',
-                DATABASE_USER: process.env.DATABASE_USER ? 'SET' : 'MISSING'
+            connection: isConnected, // Dashboard expects 'connection' boolean
+            connected: isConnected,  // Legacy fallback
+            error: dbError,
+            env_status: {
+                DB_USER: dbConfig.user ? 'OK' : 'MISSING',
+                DB_SERVER: dbConfig.server ? 'OK' : 'MISSING'
             }
         };
-        if (pool?.connected) {
-            try { await pool.request().query('SELECT 1'); } 
-            catch (err: any) { status.error = err.message; }
-        } else {
-            status.error = "Offline";
+        
+        if (isConnected) {
+            try { 
+                await pool!.request().query('SELECT 1'); 
+            } catch (err: any) { 
+                status.connection = false;
+                status.error = `Query failed: ${err.message}`; 
+            }
         }
+        
         res.json(status);
     });
 
