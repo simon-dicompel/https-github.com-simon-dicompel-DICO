@@ -25,6 +25,7 @@
     "tsx": "^4.21.0"
   },
   "devDependencies": {
+    "@rollup/rollup-linux-x64-gnu": "^4.60.2",
     "@types/express": "^5.0.6",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",

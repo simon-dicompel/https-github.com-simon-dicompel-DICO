@@ -64,12 +64,20 @@ let dbError: string | null = null;
 // Ensure DB Connection
 const getPool = async () => {
     if (pool && pool.connected) {
-        console.log(">> [DB] Reusing existing connection pool");
         return pool;
     }
     
-    console.log(`>> [DB] Tentando conectar ao servidor: ${dbConfig.server}`);
-    console.log(`>> [DB] Database: ${dbConfig.database}, User: ${dbConfig.user}`);
+    // Check if we already have a global connection in mssql (sometimes static globals persist in serverless)
+    try {
+        // @ts-ignore
+        if (sql.globalPool && sql.globalPool.connected) {
+             // @ts-ignore
+            pool = sql.globalPool;
+            return pool;
+        }
+    } catch (e) {}
+
+    console.log(`>> [DB] Connecting to: ${dbConfig.server} | DB: ${dbConfig.database} | User: ${dbConfig.user}`);
     try {
         pool = await sql.connect(dbConfig);
         console.log('>> Sucesso: Conectado ao Azure SQL Server (MSSQL)');
@@ -82,6 +90,8 @@ const getPool = async () => {
     } catch (err: any) {
         dbError = err.message;
         console.error('>> ERRO AO CONECTAR AO AZURE SQL SERVER:', err.message);
+        // Reset pool so next attempt tries again
+        pool = null;
         throw err;
     }
 };
@@ -135,6 +145,32 @@ const executeQuery = async (query: string, params: {name: string, type: any, val
 };
 
 // --- API ROUTES ---
+
+app.get("/api/db-test", async (req, res) => {
+    try {
+        const activePool = await getPool();
+        const result = await activePool.request().query("SELECT @@VERSION as version, DB_NAME() as db");
+        res.json({
+            status: "success",
+            data: result.recordset[0],
+            config: {
+                server: dbConfig.server,
+                database: dbConfig.database,
+                user: dbConfig.user
+            }
+        });
+    } catch (err: any) {
+        res.status(500).json({
+            status: "error",
+            message: err.message,
+            config: {
+                server: dbConfig.server,
+                database: dbConfig.database,
+                user: dbConfig.user
+            }
+        });
+    }
+});
 
 app.get("/api/health", async (req, res) => {
     let isConnected = false;
