@@ -65,7 +65,8 @@ console.log(`>> [INFO] Porta: ${PORT}`);
 console.log(`>> [INFO] Node Env: ${process.env.NODE_ENV}`);
 console.log(`>> [INFO] DB Server: ${dbConfig.server}`);
 
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // FaviIcon bypass
 app.get("/favicon.ico", (req, res) => res.status(204).end());
@@ -328,14 +329,18 @@ app.get("/api/db-check", async (req, res) => {
 
     // --- EMAIL CONFIGURATION ---
     const emailTransporter = nodemailer.createTransport({
-        service: 'Office365',
+        host: "smtp.office365.com",
+        port: 587,
+        secure: false, // true for 465, false for 587
         auth: {
             user: 'representante@dicompel.com.br',
             pass: 'skslgjzcmxcsfwxg'
         },
         tls: {
             rejectUnauthorized: false
-        }
+        },
+        debug: true,
+        logger: true
     });
 
     const sendOrderEmail = async (orderData: any, type: 'NEW' | 'UPDATE') => {
