@@ -233,7 +233,7 @@ app.get("/api/db-check", async (req, res) => {
             const result = await executeQuery('SELECT * FROM Products ORDER BY ProductName');
             res.json(result.recordset.map(mapProduct));
         } catch (err: any) {
-            console.error("DB Error:", err.message);
+            console.error(">> [API] Error GET /api/products:", err);
             res.status(500).json({ error: err.message });
         }
     });
@@ -319,6 +319,7 @@ app.get("/api/db-check", async (req, res) => {
             const result = await currentPool.request().query('SELECT * FROM usuarios ORDER BY nome');
             res.json(result.recordset.map(mapUser));
         } catch (err: any) {
+            console.error(">> [API] Error GET /api/users:", err);
             res.status(500).json({ error: err.message });
         }
     });
@@ -389,21 +390,26 @@ app.get("/api/db-check", async (req, res) => {
         const orders = res.recordset;
         
         for (const order of orders) {
-            const orderId = order.OrderID || order.orderid || order.id || order.ID;
+            const orderId = order.OrderID ?? order.orderid ?? order.id ?? order.ID;
+            if (orderId === undefined || orderId === null) {
+                console.warn(">> [API] Order found without ID:", order);
+                continue;
+            }
+
             const itemsRes = await currentPool.request()
-                .input('orderId', sql.UniqueIdentifier, orderId)
+                .input('orderId', sql.Int, orderId)
                 .query('SELECT ProductID as id, ProductCode as code, ProductName as pName, Quantity as quantity FROM OrderItems WHERE OrderID = @orderId');
             
             order.items = itemsRes.recordset.map((it: any) => ({
                 ...it,
-                id: (it.id || it.ProductID || it.productid).toString(),
+                id: (it.id ?? it.ProductID ?? it.productid ?? '0').toString(),
                 description: it.pName || it.ProductName || it.productname
             }));
             
             order.id = orderId.toString();
             order.createdAt = order.CreatedAt || order.createdat || order.date;
             order.status = order.Status || order.status;
-            order.representativeId = (order.RepresentativeID || order.representativeid || order.repId || "").toString();
+            order.representativeId = (order.RepresentativeID ?? order.representativeid ?? order.repId ?? "").toString();
             order.customerName = order.CustomerName || order.customername || order.name;
             order.customerEmail = order.CustomerEmail || order.customeremail || order.email;
             order.customerContact = order.CustomerPhone || order.customerphone || order.phone;
@@ -417,6 +423,7 @@ app.get("/api/db-check", async (req, res) => {
             const orders = await fetchOrdersWithItems('SELECT * FROM Orders ORDER BY CreatedAt DESC');
             res.json(orders);
         } catch (err: any) {
+            console.error(">> [API] Error GET /api/orders:", err);
             res.status(500).json({ error: err.message });
         }
     });
@@ -429,6 +436,7 @@ app.get("/api/db-check", async (req, res) => {
             );
             res.json(orders);
         } catch (err: any) {
+            console.error(`>> [API] Error GET /api/orders/rep/${req.params.repId}:`, err);
             res.status(500).json({ error: err.message });
         }
     });
@@ -450,29 +458,31 @@ app.get("/api/db-check", async (req, res) => {
             await transaction.begin();
             const orderRequest = new sql.Request(transaction);
             
-            console.log(">> [ORDER] Inserindo cabeçalho...");
+            console.log(`>> [ORDER] Inserindo cabeçalho do pedido...`);
+            
             const orderResult = await orderRequest
                 .input('name', sql.NVarChar, (customerName || 'Cliente Anônimo').trim())
                 .input('email', sql.NVarChar, (customerEmail || '').trim())
                 .input('phone', sql.NVarChar, (customerContact || '').trim())
-                .input('repId', sql.Int, repIdInt)
+                .input('repId', sql.Int, repIdInt) // Note: Although schema says UniqueIdentifier, typically it is linked to users (int). If it fails, we will know.
                 .input('status', sql.NVarChar, status || 'Novo')
                 .input('notes', sql.NVarChar, notes || '')
-                .query(`INSERT INTO Orders (OrderID, CustomerName, CustomerEmail, CustomerPhone, RepresentativeID, Status, CreatedAt, Notes) 
+                .query(`INSERT INTO Orders (CustomerName, CustomerEmail, CustomerPhone, RepresentativeID, Status, CreatedAt, Notes) 
                         OUTPUT INSERTED.* 
-                        VALUES (NEWID(), @name, @email, @phone, @repId, @status, SYSDATETIMEOFFSET(), @notes)`);
+                        VALUES (@name, @email, @phone, NULLIF(@repId, 0), @status, SYSDATETIMEOFFSET(), @notes)`);
             
             const newOrder = orderResult.recordset[0];
             if (!newOrder) throw new Error("Erro ao inserir pedido: Nenhum dado retornado.");
             
-            console.log(`>> [ORDER] Sucesso cabeçalho. ID: ${newOrder.OrderID}. Inserindo ${items.length} itens...`);
+            const newOrderId = newOrder.OrderID;
+            console.log(`>> [ORDER] Sucesso cabeçalho. ID: ${newOrderId}. Inserindo ${items.length} itens...`);
 
             for (const item of items) {
                 const itemRequest = new sql.Request(transaction);
                 
-                // IMPORTANTE: Tratando ProductID como GUID (UniqueIdentifier)
+                // ProductID é UniqueIdentifier no banco
                 await itemRequest
-                    .input('orderId', sql.UniqueIdentifier, newOrder.OrderID)
+                    .input('orderId', sql.Int, newOrderId)
                     .input('prodId', sql.UniqueIdentifier, item.id)
                     .input('code', sql.NVarChar, item.code)
                     .input('name', sql.NVarChar, item.description)
@@ -496,7 +506,7 @@ app.get("/api/db-check", async (req, res) => {
         try {
             const currentPool = await getPool();
             await currentPool.request()
-                .input('id', sql.UniqueIdentifier, req.params.id)
+                .input('id', sql.Int, parseInt(req.params.id))
                 .input('status', sql.NVarChar, req.body.status)
                 .query('UPDATE Orders SET Status = @status WHERE OrderID = @id');
             res.status(204).end();
@@ -508,9 +518,10 @@ app.get("/api/db-check", async (req, res) => {
     app.delete("/api/orders/:id", async (req, res) => {
         try {
             const currentPool = await getPool();
+            const orderId = parseInt(req.params.id);
             // Delete items first
-            await currentPool.request().input('id', sql.UniqueIdentifier, req.params.id).query('DELETE FROM OrderItems WHERE OrderID = @id');
-            await currentPool.request().input('id', sql.UniqueIdentifier, req.params.id).query('DELETE FROM Orders WHERE OrderID = @id');
+            await currentPool.request().input('id', sql.Int, orderId).query('DELETE FROM OrderItems WHERE OrderID = @id');
+            await currentPool.request().input('id', sql.Int, orderId).query('DELETE FROM Orders WHERE OrderID = @id');
             res.status(204).end();
         } catch (err: any) {
             res.status(500).json({ error: err.message });
