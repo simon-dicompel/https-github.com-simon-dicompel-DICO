@@ -131,35 +131,39 @@ app.get("/api/db-check", async (req, res) => {
 // --- HELPER MAPPERS ---
     
     const mapProduct = (p: any) => {
+        const id = (p.ProductID || p.productid || p.id || p.Id || '0').toString();
         const product = {
-            id: (p.ProductID || p.id).toString(),
-            code: p.ProductCode || p.codigo,
-            description: p.ProductName || p.nome || p.description, // Fallback if column happens to be named description
-            reference: p.ProductCode || p.codigo,
+            id,
+            code: p.ProductCode || p.productcode || p.codigo || p.Codigo,
+            description: p.ProductName || p.productname || p.nome || p.Nome || p.description,
+            reference: p.ProductCode || p.productcode || p.codigo,
             colors: [],
-            imageUrl: p.ImageData || '',
-            category: p.Category || p.tipo || 'Geral',
+            imageUrl: p.ImageData || p.imagedata || p.image || '',
+            category: p.Category || p.category || p.tipo || 'Geral',
             subcategory: '',
-            line: p.Line || '',
-            details: p.TechnicalSpecs || '',
+            line: p.Line || p.line || '',
+            details: p.TechnicalSpecs || p.technicalspecs || '',
             amperage: ''
         };
         return product;
     };
 
     const mapUser = (u: any) => {
-        let profileRaw = u.perfil || u.role || 'USER';
-        let role = profileRaw.toUpperCase();
-        if (role === 'VENDEDOR') role = 'REPRESENTATIVE';
-        if (role === 'ADMIN') role = 'ADMIN';
-        if (role === 'SUPERVISOR') role = 'SUPERVISOR';
+        if (!u) return { id: '0', name: 'Unknown', email: '', role: 'USER' };
         
-        return {
-            id: u.id?.toString() || u.UserID?.toString() || u.usuarios_id?.toString() || '0',
-            email: u.email,
-            name: u.nome || u.name,
-            role: role as UserRole
-        };
+        // Suporte a diferentes nomes de colunas e capitalização (MSSQL case varia)
+        const name = u.nome || u.name || u.Name || 'Sem Nome';
+        const email = u.email || u.Email || '';
+        const id = (u.id || u.usuarios_id || u.UserID || u.Id || '0').toString();
+        const perfil = (u.perfil || u.Perfil || u.role || u.Role || 'REPRESENTATIVE').toString().toUpperCase();
+        
+        let mappedRole = 'REPRESENTATIVE';
+        if (perfil.includes('ADMIN')) mappedRole = 'ADMIN';
+        else if (perfil.includes('SUPERVISOR')) mappedRole = 'SUPERVISOR';
+        else if (perfil.includes('VENDEDOR') || perfil.includes('REP')) mappedRole = 'REPRESENTATIVE';
+        else mappedRole = 'REPRESENTATIVE'; // Default para DICOMPEL
+
+        return { id, name, email, role: mappedRole };
     };
 
     // Mapeia Role do Frontend para Perfil do Banco
@@ -258,8 +262,10 @@ app.get("/api/db-check", async (req, res) => {
         try {
             const currentPool = await getPool();
             const { code, description, category, line, details, imageUrl } = req.body;
+            const productId = req.params.id; // Mantendo como string para UniqueIdentifier
+
             const result = await currentPool.request()
-                .input('id', sql.UniqueIdentifier, req.params.id)
+                .input('id', sql.UniqueIdentifier, productId)
                 .input('code', sql.NVarChar, code)
                 .input('name', sql.NVarChar, description)
                 .input('category', sql.NVarChar, category)
@@ -271,8 +277,11 @@ app.get("/api/db-check", async (req, res) => {
                             TechnicalSpecs = @specs, ImageData = @image 
                         OUTPUT INSERTED.*
                         WHERE ProductID = @id`);
+            
+            if (result.recordset.length === 0) return res.status(404).json({ error: "Produto não encontrado" });
             res.json(mapProduct(result.recordset[0]));
         } catch (err: any) {
+            console.error("Update Product Error:", err);
             res.status(500).json({ error: err.message });
         }
     });
@@ -380,21 +389,25 @@ app.get("/api/db-check", async (req, res) => {
         const orders = res.recordset;
         
         for (const order of orders) {
+            const orderId = order.OrderID || order.orderid || order.id || order.ID;
             const itemsRes = await currentPool.request()
-                .input('orderId', sql.UniqueIdentifier, order.OrderID)
+                .input('orderId', sql.UniqueIdentifier, orderId)
                 .query('SELECT ProductID as id, ProductCode as code, ProductName as pName, Quantity as quantity FROM OrderItems WHERE OrderID = @orderId');
+            
             order.items = itemsRes.recordset.map((it: any) => ({
                 ...it,
-                id: (it.id || it.ProductID).toString(),
-                description: it.pName
+                id: (it.id || it.ProductID || it.productid).toString(),
+                description: it.pName || it.ProductName || it.productname
             }));
-            order.id = order.OrderID.toString();
-            order.createdAt = order.CreatedAt;
-            order.status = order.Status;
-            order.representativeId = order.RepresentativeID ? order.RepresentativeID.toString() : "";
-            order.customerName = order.CustomerName;
-            order.customerEmail = order.CustomerEmail;
-            order.customerContact = order.CustomerPhone;
+            
+            order.id = orderId.toString();
+            order.createdAt = order.CreatedAt || order.createdat || order.date;
+            order.status = order.Status || order.status;
+            order.representativeId = (order.RepresentativeID || order.representativeid || order.repId || "").toString();
+            order.customerName = order.CustomerName || order.customername || order.name;
+            order.customerEmail = order.CustomerEmail || order.customeremail || order.email;
+            order.customerContact = order.CustomerPhone || order.customerphone || order.phone;
+            order.OrderID = orderId; // Ensure consistency
         }
         return orders;
     };
@@ -421,25 +434,27 @@ app.get("/api/db-check", async (req, res) => {
     });
 
     app.post("/api/orders", async (req, res) => {
-        const currentPool = await getPool();
         const { customerName, customerEmail, customerContact, representativeId, items, status, notes } = req.body;
-        
-        console.log(`>> [ORDER] Criando pedido para cliente: ${customerName}, Rep: ${representativeId}`);
+        console.log(`>> [ORDER] Nova solicitação de pedido:`, { customer: customerName, repId: representativeId, items: items?.length });
 
-        const transaction = new sql.Transaction(currentPool);
+        let transaction;
         try {
+            const currentPool = await getPool();
+            const repIdInt = parseInt(representativeId);
+            if (isNaN(repIdInt)) {
+                console.error(">> [ORDER] Erro: representativeId inválido", representativeId);
+                return res.status(400).json({ error: "ID do representante inválido (deve ser número)" });
+            }
+
+            transaction = new sql.Transaction(currentPool);
             await transaction.begin();
             const orderRequest = new sql.Request(transaction);
             
-            const repIdInt = parseInt(representativeId);
-            if (isNaN(repIdInt)) {
-                throw new Error("ID do representante inválido (não é um número)");
-            }
-
+            console.log(">> [ORDER] Inserindo cabeçalho...");
             const orderResult = await orderRequest
-                .input('name', sql.NVarChar, customerName || '')
-                .input('email', sql.NVarChar, customerEmail || '')
-                .input('phone', sql.NVarChar, customerContact || '')
+                .input('name', sql.NVarChar, (customerName || 'Cliente Anônimo').trim())
+                .input('email', sql.NVarChar, (customerEmail || '').trim())
+                .input('phone', sql.NVarChar, (customerContact || '').trim())
                 .input('repId', sql.Int, repIdInt)
                 .input('status', sql.NVarChar, status || 'Novo')
                 .input('notes', sql.NVarChar, notes || '')
@@ -448,10 +463,14 @@ app.get("/api/db-check", async (req, res) => {
                         VALUES (NEWID(), @name, @email, @phone, @repId, @status, SYSDATETIMEOFFSET(), @notes)`);
             
             const newOrder = orderResult.recordset[0];
+            if (!newOrder) throw new Error("Erro ao inserir pedido: Nenhum dado retornado.");
             
+            console.log(`>> [ORDER] Sucesso cabeçalho. ID: ${newOrder.OrderID}. Inserindo ${items.length} itens...`);
+
             for (const item of items) {
                 const itemRequest = new sql.Request(transaction);
                 
+                // IMPORTANTE: Tratando ProductID como GUID (UniqueIdentifier)
                 await itemRequest
                     .input('orderId', sql.UniqueIdentifier, newOrder.OrderID)
                     .input('prodId', sql.UniqueIdentifier, item.id)
@@ -462,12 +481,14 @@ app.get("/api/db-check", async (req, res) => {
             }
             
             await transaction.commit();
-            console.log(`>> [ORDER] Pedido criado com sucesso: ${newOrder.OrderID}`);
-            res.json({ ...newOrder, id: newOrder.OrderID, items });
+            console.log(`>> [ORDER] Pedido Finalizado com Sucesso: ${newOrder.OrderID}`);
+            res.status(201).json({ ...newOrder, id: newOrder.OrderID, items });
         } catch (err: any) {
-            if (transaction) try { await transaction.rollback(); } catch(e) {}
-            console.error("Order Error details:", err);
-            res.status(500).json({ error: err.message || "Erro interno ao processar pedido" });
+            console.error(">> [ORDER] FALHA NO PROCESSO:", err);
+            if (transaction) {
+                try { await transaction.rollback(); } catch(e) { console.error(">> [ORDER] Erro no Rollback:", e.message); }
+            }
+            res.status(500).json({ error: "Erro ao processar pedido no servidor", details: err.message });
         }
     });
 
