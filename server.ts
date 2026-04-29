@@ -5,6 +5,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import sql from 'mssql';
 import dotenv from 'dotenv';
+import nodemailer from 'nodemailer';
 
 dotenv.config();
 
@@ -325,6 +326,75 @@ app.get("/api/db-check", async (req, res) => {
         }
     });
 
+    // --- EMAIL CONFIGURATION ---
+    const emailTransporter = nodemailer.createTransport({
+        service: 'Office365',
+        auth: {
+            user: 'representante@dicompel.com.br',
+            pass: 'skslgjzcmxcsfwxg'
+        },
+        tls: {
+            rejectUnauthorized: false
+        }
+    });
+
+    const sendOrderEmail = async (orderData: any, type: 'NEW' | 'UPDATE') => {
+        try {
+            const { customerName, customerEmail, repEmail, items, orderId, notes } = orderData;
+            const itemsHtml = items.map((it: any) => `<li>${it.quantity}x - ${it.description || it.pName || it.ProductName || 'Produto'} (${it.code || 'N/A'})</li>`).join('');
+            
+            const subject = type === 'NEW' ? `Novo Pedido Recebido - #${orderId}` : `Pedido Atualizado - #${orderId}`;
+            const title = type === 'NEW' ? 'Novo Pedido Criado' : 'Pedido Alterado';
+
+            const emailBody = `
+                <div style="font-family: sans-serif; max-width: 600px; border: 1px solid #eee; padding: 20px; color: #334155;">
+                    <h2 style="color: #2563eb;">${title}</h2>
+                    <p>Um pedido foi registrado no sistema <strong>Dicompel Catalog</strong>.</p>
+                    <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;">
+                    <p><strong>Pedido ID:</strong> #${orderId}</p>
+                    <p><strong>Cliente:</strong> ${customerName}</p>
+                    <p><strong>E-mail de Contato:</strong> ${customerEmail}</p>
+                    
+                    <h3 style="color: #475569; margin-top: 25px;">Resumo dos Itens:</h3>
+                    <ul style="padding-left: 20px;">${itemsHtml}</ul>
+                    
+                    ${notes ? `<div style="background: #f8fafc; padding: 15px; border-radius: 8px; margin-top: 20px;"><strong>Observações:</strong><br>${notes}</div>` : ''}
+                    
+                    <p style="margin-top: 30px; font-size: 11px; color: #94a3b8; border-top: 1px solid #f1f5f9; padding-top: 10px;">
+                        Este é um e-mail automático gerado pelo sistema de pedidos. Não responda diretamente a este endereço.
+                    </p>
+                </div>
+            `;
+
+            // Configuração base do remetente
+            const fromAddress = `"Dicompel Catalog" <${process.env.EMAIL_USER || 'representante@dicompel.com.br'}>`;
+
+            // Enviar para o representante
+            if (repEmail && repEmail.includes('@')) {
+                await emailTransporter.sendMail({
+                    from: fromAddress,
+                    to: repEmail,
+                    subject: subject,
+                    html: emailBody
+                });
+                console.log(`>> [MAIL] Notificação enviada ao Representante: ${repEmail}`);
+            }
+
+            // Enviar cópia para o cliente
+            if (customerEmail && customerEmail.includes('@')) {
+                await emailTransporter.sendMail({
+                    from: fromAddress,
+                    to: customerEmail,
+                    subject: `Copia do seu Pedido - #${orderId}`,
+                    html: emailBody
+                });
+                console.log(`>> [MAIL] Cópia enviada ao Cliente: ${customerEmail}`);
+            }
+        } catch (err) {
+            console.error(">> [MAIL] Erro Fatal ao enviar e-mail:", err);
+        }
+    };
+
     app.post("/api/users", async (req, res) => {
         try {
             const currentPool = await getPool();
@@ -503,6 +573,26 @@ app.get("/api/db-check", async (req, res) => {
             
             await transaction.commit();
             console.log(`>> [ORDER] Pedido Finalizado com Sucesso: ${newOrder.OrderID}`);
+
+            // Enviar E-mail em background para não travar a resposta
+            try {
+                const repResult = await currentPool.request()
+                    .input('id', sql.Int, repIdInt)
+                    .query('SELECT email FROM usuarios WHERE id = @id');
+                const repEmail = repResult.recordset[0]?.email;
+                
+                sendOrderEmail({
+                    orderId: newOrderId,
+                    customerName,
+                    customerEmail,
+                    repEmail,
+                    items,
+                    notes
+                }, 'NEW').catch(e => console.error("Async sendOrderEmail error:", e));
+            } catch (e) {
+                console.error("Error fetching rep email for notification:", e);
+            }
+
             res.status(201).json({ ...newOrder, id: newOrder.OrderID, items });
         } catch (err: any) {
             console.error(">> [ORDER] FALHA NO PROCESSO:", err);
@@ -584,6 +674,26 @@ app.get("/api/db-check", async (req, res) => {
             }
             
             await transaction.commit();
+            
+            // Enviar E-mail de Atualização
+            try {
+                const repResult = await currentPool.request()
+                    .input('id', sql.Int, repIdInt)
+                    .query('SELECT email FROM usuarios WHERE id = @id');
+                const repEmail = repResult.recordset[0]?.email;
+                
+                sendOrderEmail({
+                    orderId: orderId,
+                    customerName,
+                    customerEmail,
+                    repEmail,
+                    items,
+                    notes
+                }, 'UPDATE').catch(e => console.error("Async sendOrderEmail error:", e));
+            } catch (e) {
+                console.error("Error fetching rep email for update notification:", e);
+            }
+
             res.status(200).json({ success: true, orderId });
         } catch (err: any) {
             console.error(">> [API] PUT /api/orders/:id Error:", err);
