@@ -289,6 +289,34 @@ app.get("/api/db-check", async (req, res) => {
         }
     });
 
+    app.delete("/api/products/:id", async (req, res) => {
+        try {
+            const currentPool = await getPool();
+            const productId = req.params.id;
+            
+            // Try to determine if it's an INT or UUID
+            let idType = sql.UniqueIdentifier;
+            if (/^\d+$/.test(productId)) {
+                idType = sql.Int;
+            }
+
+            const result = await currentPool.request()
+                .input('id', idType, productId)
+                .query('DELETE FROM Products WHERE ProductID = @id OR id = @id');
+            
+            if (result.rowsAffected[0] === 0) {
+                // If not found by ProductID/id, maybe it's another column name?
+                // But usually it's one of these.
+                return res.status(404).json({ error: "Produto não encontrado ou já excluído." });
+            }
+            
+            res.status(204).end();
+        } catch (err: any) {
+            console.error("Delete Product Error:", err);
+            res.status(500).json({ error: err.message });
+        }
+    });
+
     // AUTH
     app.post("/api/auth/login", async (req, res) => {
         const { email, password } = req.body;

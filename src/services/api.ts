@@ -26,6 +26,13 @@ export const productService = {
     if (!res.ok) throw new Error('Falha ao atualizar produto');
     return res.json();
   },
+  delete: async (id: string): Promise<void> => {
+    const res = await fetch(`${API_BASE}/products/${id}`, { method: 'DELETE' });
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({}));
+      throw new Error(errorData.error || 'Falha ao excluir produto');
+    }
+  },
 };
 
 export const userService = {

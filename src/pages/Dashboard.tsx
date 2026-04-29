@@ -174,6 +174,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, refreshTrigger = 0 }
     } catch (err: any) { alert(`Erro: ${err.message}`); }
   };
 
+  const handleDeleteProduct = async (product: Product) => {
+    if (!window.confirm(`Tem certeza que deseja EXCLUIR o produto ${product.description}?`)) return;
+    try {
+      await productService.delete(product.id);
+      loadData(true);
+      alert("Produto excluído com sucesso.");
+    } catch (err: any) {
+      alert(`Erro ao excluir produto: ${err.message}`);
+    }
+  };
+
   const handleSaveUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingUser) return;
@@ -467,7 +478,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, refreshTrigger = 0 }
                              <span className="text-[9px] font-black bg-slate-100 text-slate-600 px-2 py-1 rounded-lg uppercase border border-slate-200">{p.category}</span>
                           </td>
                           <td className="px-6 py-4 text-right">
-                             <button onClick={() => { setEditingProduct(p); setShowProductModal(true); }} className="p-2 text-slate-400 hover:text-blue-600 bg-slate-50 rounded-lg"><Edit2 className="h-4 w-4"/></button>
+                             <div className="flex justify-end gap-2">
+                                <button onClick={() => { setEditingProduct(p); setShowProductModal(true); }} className="p-2 text-slate-400 hover:text-blue-600 bg-slate-50 rounded-lg transition-colors" title="Editar"><Edit2 className="h-4 w-4"/></button>
+                                <button onClick={() => handleDeleteProduct(p)} className="p-2 text-slate-400 hover:text-red-600 bg-slate-50 rounded-lg transition-colors" title="Excluir"><Trash2 className="h-4 w-4"/></button>
+                             </div>
                           </td>
                         </tr>
                       ))}
