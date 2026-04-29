@@ -680,12 +680,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, refreshTrigger = 0 }
                <button onClick={() => setShowUserModal(false)} className="text-slate-300 hover:text-slate-900 bg-slate-50 p-2 rounded-full"><X className="h-8 w-8"/></button>
             </div>
 
-            <form onSubmit={handleSaveUser} className="space-y-6">
+            <form onSubmit={handleSaveUser} className="space-y-6" autoComplete="off">
+               {/* Campos falsos para enganar gerenciadores de senha */}
+               <input type="text" style={{display: 'none'}} name="fake-user-name" />
+               <input type="password" style={{display: 'none'}} name="fake-password" />
                <div>
                   <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest">Nome Completo</label>
                   <div className="relative">
                      <UserIcon className="absolute inset-y-0 left-3 h-5 w-5 text-slate-500 my-auto" />
-                     <input required type="text" autoComplete="name" className={`${darkInput} pl-10`} value={editingUser.name || ''} onChange={e => setEditingUser({...editingUser, name: e.target.value})} placeholder="Ex: João da Silva" />
+                     <input required type="text" autoComplete="new-user-name" className={`${darkInput} pl-10`} value={editingUser.name || ''} onChange={e => setEditingUser({...editingUser, name: e.target.value})} placeholder="Ex: João da Silva" />
                   </div>
                </div>
 
@@ -693,7 +696,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, refreshTrigger = 0 }
                   <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest">E-mail Corporativo</label>
                   <div className="relative">
                      <Mail className="absolute inset-y-0 left-3 h-5 w-5 text-slate-500 my-auto" />
-                     <input required type="email" autoComplete="off" className={`${darkInput} pl-10`} value={editingUser.email || ''} onChange={e => setEditingUser({...editingUser, email: e.target.value})} placeholder="joao@dicompel.com.br" />
+                     <input required type="email" autoComplete="new-user-email" className={`${darkInput} pl-10`} value={editingUser.email || ''} onChange={e => setEditingUser({...editingUser, email: e.target.value})} placeholder="joao@dicompel.com.br" />
                   </div>
                </div>
 
