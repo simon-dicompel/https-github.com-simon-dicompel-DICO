@@ -539,6 +539,62 @@ app.get("/api/db-check", async (req, res) => {
         }
     });
 
+    app.put("/api/orders/:id", async (req, res) => {
+        const { customerName, customerEmail, customerContact, representativeId, items, status, notes } = req.body;
+        const orderId = parseInt(req.params.id);
+        
+        let transaction;
+        try {
+            const currentPool = await getPool();
+            const repIdInt = parseInt(representativeId);
+            
+            transaction = new sql.Transaction(currentPool);
+            await transaction.begin();
+            
+            const orderRequest = new sql.Request(transaction);
+            await orderRequest
+                .input('id', sql.Int, orderId)
+                .input('name', sql.NVarChar, (customerName || 'Cliente Anônimo').trim())
+                .input('email', sql.NVarChar, (customerEmail || '').trim())
+                .input('phone', sql.NVarChar, (customerContact || '').trim())
+                .input('repId', sql.Int, isNaN(repIdInt) ? null : repIdInt)
+                .input('status', sql.NVarChar, status || 'Novo')
+                .input('notes', sql.NVarChar, notes || '')
+                .query(`UPDATE Orders 
+                        SET CustomerName = @name, CustomerEmail = @email, CustomerPhone = @phone, 
+                            RepresentativeID = @repId, Status = @status, Notes = @notes
+                        WHERE OrderID = @id`);
+
+            // Replace items: Delete and Re-insert
+            await new sql.Request(transaction)
+                .input('orderId', sql.Int, orderId)
+                .query('DELETE FROM OrderItems WHERE OrderID = @orderId');
+
+            if (items && Array.isArray(items)) {
+                for (const item of items) {
+                    const itemRequest = new sql.Request(transaction);
+                    await itemRequest
+                        .input('orderId', sql.Int, orderId)
+                        .input('prodId', sql.UniqueIdentifier, item.id)
+                        .input('code', sql.NVarChar, item.code)
+                        .input('name', sql.NVarChar, item.description || item.pName || item.ProductName)
+                        .input('qty', sql.Int, item.quantity)
+                        .query('INSERT INTO OrderItems (OrderItemID, OrderID, ProductID, ProductCode, ProductName, Quantity) VALUES (NEWID(), @orderId, @prodId, @code, @name, @qty)');
+                }
+            }
+            
+            await transaction.commit();
+            res.status(200).json({ success: true, orderId });
+        } catch (err: any) {
+            console.error(">> [API] PUT /api/orders/:id Error:", err);
+            if (transaction) {
+                try { await transaction.rollback(); } catch(e) {}
+            }
+            res.status(500).json({ error: err.message });
+        }
+    });
+
+
 
 async function setupVite() {
     // --- VITE MIDDLEWARE ---
