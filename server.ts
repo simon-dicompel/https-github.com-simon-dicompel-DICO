@@ -294,26 +294,39 @@ app.get("/api/db-check", async (req, res) => {
             const currentPool = await getPool();
             const productId = req.params.id;
             
-            // Try to determine if it's an INT or UUID
             let idType = sql.UniqueIdentifier;
             if (/^\d+$/.test(productId)) {
                 idType = sql.Int;
             }
 
+            // 1. Check if product is used in any OrderItems
+            const checkUsage = await currentPool.request()
+                .input('id', idType, productId)
+                .query('SELECT TOP 1 OrderID FROM OrderItems WHERE ProductID = @id');
+            
+            if (checkUsage.recordset.length > 0) {
+                return res.status(409).json({ 
+                    error: "Não é possível excluir este produto pois ele já foi utilizado em pedidos existentes. Sugerimos manter o produto para preservar o histórico de vendas." 
+                });
+            }
+
+            // 2. Try to delete (trying common column names to be safe)
             const result = await currentPool.request()
                 .input('id', idType, productId)
-                .query('DELETE FROM Products WHERE ProductID = @id OR id = @id');
+                .query('DELETE FROM Products WHERE ProductID = @id');
             
             if (result.rowsAffected[0] === 0) {
-                // If not found by ProductID/id, maybe it's another column name?
-                // But usually it's one of these.
                 return res.status(404).json({ error: "Produto não encontrado ou já excluído." });
             }
             
             res.status(204).end();
         } catch (err: any) {
             console.error("Delete Product Error:", err);
-            res.status(500).json({ error: err.message });
+            // Handle specific SQL errors like Foreign Key
+            if (err.message && err.message.includes('REFERENCE constraint')) {
+                return res.status(409).json({ error: "Este produto possui vínculos com outras tabelas e não pode ser removido." });
+            }
+            res.status(500).json({ error: "Erro interno ao excluir produto: " + err.message });
         }
     });
 
