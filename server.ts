@@ -132,7 +132,7 @@ app.get("/api/db-check", async (req, res) => {
     
     const mapProduct = (p: any) => {
         const product = {
-            id: p.ProductID || p.id,
+            id: (p.ProductID || p.id).toString(),
             code: p.ProductCode || p.codigo,
             description: p.ProductName || p.nome || p.description, // Fallback if column happens to be named description
             reference: p.ProductCode || p.codigo,
@@ -148,9 +148,11 @@ app.get("/api/db-check", async (req, res) => {
     };
 
     const mapUser = (u: any) => {
-        let role = (u.perfil || u.role || 'REPRESENTATIVE').toUpperCase();
+        let role = (u.perfil || u.role || 'USER').toUpperCase();
         if (role === 'VENDEDOR') role = 'REPRESENTATIVE';
         if (role === 'ADMIN') role = 'ADMIN';
+        if (role === 'SUPERVISOR') role = 'SUPERVISOR';
+        
         return {
             id: u.id.toString(),
             email: u.email,
@@ -164,6 +166,7 @@ app.get("/api/db-check", async (req, res) => {
         const r = role.toUpperCase();
         if (r === 'REPRESENTATIVE') return 'vendedor';
         if (r === 'ADMIN') return 'admin';
+        if (r === 'SUPERVISOR') return 'supervisor';
         return 'vendedor'; // default
     };
 
@@ -241,9 +244,9 @@ app.get("/api/db-check", async (req, res) => {
                 .input('line', sql.NVarChar, line)
                 .input('specs', sql.NVarChar, details)
                 .input('image', sql.NVarChar, imageUrl)
-                .query(`INSERT INTO Products (ProductID, ProductCode, ProductName, Category, Line, TechnicalSpecs, ImageData, CreatedAt) 
+                .query(`INSERT INTO Products (ProductCode, ProductName, Category, Line, TechnicalSpecs, ImageData, CreatedAt) 
                         OUTPUT INSERTED.* 
-                        VALUES (NEWID(), @code, @name, @category, @line, @specs, @image, SYSDATETIMEOFFSET())`);
+                        VALUES (@code, @name, @category, @line, @specs, @image, SYSDATETIMEOFFSET())`);
             res.json(mapProduct(result.recordset[0]));
         } catch (err: any) {
             res.status(500).json({ error: err.message });
@@ -254,8 +257,11 @@ app.get("/api/db-check", async (req, res) => {
         try {
             const currentPool = await getPool();
             const { code, description, category, line, details, imageUrl } = req.body;
+            const productId = parseInt(req.params.id);
+            if (isNaN(productId)) return res.status(400).json({ error: "ID de produto inválido" });
+
             const result = await currentPool.request()
-                .input('id', sql.UniqueIdentifier, req.params.id)
+                .input('id', sql.Int, productId)
                 .input('code', sql.NVarChar, code)
                 .input('name', sql.NVarChar, description)
                 .input('category', sql.NVarChar, category)
@@ -377,16 +383,17 @@ app.get("/api/db-check", async (req, res) => {
         
         for (const order of orders) {
             const itemsRes = await currentPool.request()
-                .input('orderId', sql.UniqueIdentifier, order.OrderID)
+                .input('orderId', sql.Int, order.OrderID)
                 .query('SELECT ProductID as id, ProductCode as code, ProductName as pName, Quantity as quantity FROM OrderItems WHERE OrderID = @orderId');
             order.items = itemsRes.recordset.map((it: any) => ({
                 ...it,
+                id: (it.id || it.ProductID).toString(),
                 description: it.pName
             }));
-            order.id = order.OrderID;
+            order.id = order.OrderID.toString();
             order.createdAt = order.CreatedAt;
             order.status = order.Status;
-            order.representativeId = order.RepresentativeID;
+            order.representativeId = order.RepresentativeID ? order.RepresentativeID.toString() : "";
             order.customerName = order.CustomerName;
             order.customerEmail = order.CustomerEmail;
             order.customerContact = order.CustomerPhone;
@@ -407,7 +414,7 @@ app.get("/api/db-check", async (req, res) => {
         try {
             const orders = await fetchOrdersWithItems(
                 'SELECT * FROM Orders WHERE RepresentativeID = @repId ORDER BY CreatedAt DESC',
-                [{ name: 'repId', type: sql.NVarChar, value: req.params.repId }]
+                [{ name: 'repId', type: sql.Int, value: parseInt(req.params.repId) }]
             );
             res.json(orders);
         } catch (err: any) {
@@ -419,49 +426,68 @@ app.get("/api/db-check", async (req, res) => {
         const currentPool = await getPool();
         const { customerName, customerEmail, customerContact, representativeId, items, status, notes } = req.body;
         
+        console.log(`>> [ORDER] Criando pedido para cliente: ${customerName}, Rep: ${representativeId}`);
+
         const transaction = new sql.Transaction(currentPool);
         try {
             await transaction.begin();
             const orderRequest = new sql.Request(transaction);
             
+            const repIdInt = parseInt(representativeId);
+            if (isNaN(repIdInt)) {
+                throw new Error("ID do representante inválido (não é um número)");
+            }
+
             const orderResult = await orderRequest
                 .input('name', sql.NVarChar, customerName || '')
                 .input('email', sql.NVarChar, customerEmail || '')
                 .input('phone', sql.NVarChar, customerContact || '')
-                .input('repId', sql.NVarChar, representativeId)
+                .input('repId', sql.Int, repIdInt)
                 .input('status', sql.NVarChar, status || 'Novo')
                 .input('notes', sql.NVarChar, notes || '')
-                .query(`INSERT INTO Orders (OrderID, CustomerName, CustomerEmail, CustomerPhone, RepresentativeID, Status, CreatedAt, OrderNumber, Notes) 
+                .query(`INSERT INTO Orders (CustomerName, CustomerEmail, CustomerPhone, RepresentativeID, Status, CreatedAt, Notes) 
                         OUTPUT INSERTED.* 
-                        VALUES (NEWID(), @name, @email, @phone, @repId, @status, SYSDATETIMEOFFSET(), LEFT(REPLACE(CAST(NEWID() as nvarchar(max)), '-', ''), 8), @notes)`);
+                        VALUES (@name, @email, @phone, @repId, @status, SYSDATETIMEOFFSET(), @notes)`);
             
             const newOrder = orderResult.recordset[0];
             
             for (const item of items) {
                 const itemRequest = new sql.Request(transaction);
+                
+                // IDs são agora numéricos
+                const prodIdInt = parseInt(item.id);
+                if (isNaN(prodIdInt)) {
+                    console.error(`>> [ORDER] Erro: ProductID inválido (não é número): ${item.id} para o produto ${item.code}`);
+                    throw new Error(`Produto "${item.description}" possui um identificador inválido.`);
+                }
+
                 await itemRequest
-                    .input('orderId', sql.UniqueIdentifier, newOrder.OrderID)
-                    .input('prodId', sql.UniqueIdentifier, item.id)
+                    .input('orderId', sql.Int, newOrder.OrderID || newOrder.id)
+                    .input('prodId', sql.Int, prodIdInt)
                     .input('code', sql.NVarChar, item.code)
                     .input('name', sql.NVarChar, item.description)
                     .input('qty', sql.Int, item.quantity)
-                    .query('INSERT INTO OrderItems (OrderItemID, OrderID, ProductID, ProductCode, ProductName, Quantity) VALUES (NEWID(), @orderId, @prodId, @code, @name, @qty)');
+                    .query('INSERT INTO OrderItems (OrderID, ProductID, ProductCode, ProductName, Quantity) VALUES (@orderId, @prodId, @code, @name, @qty)');
             }
             
             await transaction.commit();
+            console.log(`>> [ORDER] Pedido criado com sucesso: ${newOrder.OrderID}`);
             res.json({ ...newOrder, id: newOrder.OrderID, items });
         } catch (err: any) {
-            await transaction.rollback();
-            console.error("Order Error:", err.message);
-            res.status(500).json({ error: err.message });
+            if (transaction) await transaction.rollback();
+            console.error("Order Error details:", err);
+            res.status(500).json({ error: err.message || "Erro interno ao processar pedido" });
         }
     });
 
     app.patch("/api/orders/:id/status", async (req, res) => {
         try {
             const currentPool = await getPool();
+            const orderId = parseInt(req.params.id);
+            if (isNaN(orderId)) return res.status(400).json({ error: "ID inválido" });
+
             await currentPool.request()
-                .input('id', sql.UniqueIdentifier, req.params.id)
+                .input('id', sql.Int, orderId)
                 .input('status', sql.NVarChar, req.body.status)
                 .query('UPDATE Orders SET Status = @status WHERE OrderID = @id');
             res.status(204).end();
@@ -473,9 +499,12 @@ app.get("/api/db-check", async (req, res) => {
     app.delete("/api/orders/:id", async (req, res) => {
         try {
             const currentPool = await getPool();
+            const orderId = parseInt(req.params.id);
+            if (isNaN(orderId)) return res.status(400).json({ error: "ID inválido" });
+
             // Delete items first
-            await currentPool.request().input('id', sql.UniqueIdentifier, req.params.id).query('DELETE FROM OrderItems WHERE OrderID = @id');
-            await currentPool.request().input('id', sql.UniqueIdentifier, req.params.id).query('DELETE FROM Orders WHERE OrderID = @id');
+            await currentPool.request().input('id', sql.Int, orderId).query('DELETE FROM OrderItems WHERE OrderID = @id');
+            await currentPool.request().input('id', sql.Int, orderId).query('DELETE FROM Orders WHERE OrderID = @id');
             res.status(204).end();
         } catch (err: any) {
             res.status(500).json({ error: err.message });

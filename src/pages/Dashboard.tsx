@@ -588,6 +588,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, refreshTrigger = 0 }
                         <Lock className="absolute inset-y-0 left-3 h-4 w-4 text-slate-400 my-auto" />
                         <input 
                           type={showPass ? "text" : "password"} 
+                          autoComplete="new-password"
                           className={`${darkInput} pl-10 pr-10`} 
                           placeholder="Min. 6 caracteres" 
                           value={newPassword}
@@ -684,7 +685,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, refreshTrigger = 0 }
                   <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest">Nome Completo</label>
                   <div className="relative">
                      <UserIcon className="absolute inset-y-0 left-3 h-5 w-5 text-slate-500 my-auto" />
-                     <input required type="text" className={`${darkInput} pl-10`} value={editingUser.name || ''} onChange={e => setEditingUser({...editingUser, name: e.target.value})} placeholder="Ex: João da Silva" />
+                     <input required type="text" autoComplete="name" className={`${darkInput} pl-10`} value={editingUser.name || ''} onChange={e => setEditingUser({...editingUser, name: e.target.value})} placeholder="Ex: João da Silva" />
                   </div>
                </div>
 
@@ -692,7 +693,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, refreshTrigger = 0 }
                   <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest">E-mail Corporativo</label>
                   <div className="relative">
                      <Mail className="absolute inset-y-0 left-3 h-5 w-5 text-slate-500 my-auto" />
-                     <input required type="email" className={`${darkInput} pl-10`} value={editingUser.email || ''} onChange={e => setEditingUser({...editingUser, email: e.target.value})} placeholder="joao@dicompel.com.br" />
+                     <input required type="email" autoComplete="off" className={`${darkInput} pl-10`} value={editingUser.email || ''} onChange={e => setEditingUser({...editingUser, email: e.target.value})} placeholder="joao@dicompel.com.br" />
                   </div>
                </div>
 
@@ -719,7 +720,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, refreshTrigger = 0 }
                     <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest">Senha de Acesso Inicial</label>
                     <div className="relative">
                        <Lock className="absolute inset-y-0 left-3 h-5 w-5 text-slate-500 my-auto" />
-                       <input required type="password" className={`${darkInput} pl-10`} value={editingUser.password || ''} onChange={e => setEditingUser({...editingUser, password: e.target.value})} placeholder="••••••••" />
+                       <input required type="password" autoComplete="new-password" className={`${darkInput} pl-10`} value={editingUser.password || ''} onChange={e => setEditingUser({...editingUser, password: e.target.value})} placeholder="••••••••" />
                     </div>
                  </div>
                )}

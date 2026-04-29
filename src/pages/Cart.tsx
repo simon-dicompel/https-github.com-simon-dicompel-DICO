@@ -56,9 +56,10 @@ export const Cart: React.FC<CartProps> = ({ items, updateQuantity, removeItem, c
       });
       setSubmitted(true);
       clearCart();
-    } catch (err) {
+    } catch (err: any) {
       console.error("Erro ao enviar pedido:", err);
-      alert("Erro ao enviar pedido.");
+      const errorMessage = err.message || "Erro desconhecido";
+      alert(`Erro ao enviar pedido: ${errorMessage}`);
     }
   };
 
