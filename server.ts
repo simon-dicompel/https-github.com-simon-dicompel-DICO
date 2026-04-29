@@ -345,14 +345,24 @@ app.get("/api/db-check", async (req, res) => {
     app.put("/api/users/:id", async (req, res) => {
         try {
             const currentPool = await getPool();
-            const { name, email, role } = req.body;
+            const { name, email, role, password } = req.body;
             const profile = mapRoleToProfile(role);
-            const result = await currentPool.request()
+            
+            let query = 'UPDATE usuarios SET nome = @nome, email = @email, perfil = @perfil';
+            const request = currentPool.request()
                 .input('id', sql.Int, parseInt(req.params.id))
                 .input('nome', sql.NVarChar, name)
                 .input('email', sql.NVarChar, email)
-                .input('perfil', sql.NVarChar, profile)
-                .query('UPDATE usuarios SET nome = @nome, email = @email, perfil = @perfil OUTPUT INSERTED.* WHERE id = @id');
+                .input('perfil', sql.NVarChar, profile);
+
+            if (password) {
+                query += ', senha_hash = @senha_hash';
+                request.input('senha_hash', sql.NVarChar, password);
+            }
+
+            query += ' OUTPUT INSERTED.* WHERE id = @id';
+            
+            const result = await request.query(query);
             res.json(mapUser(result.recordset[0]));
         } catch (err: any) {
             res.status(500).json({ error: err.message });

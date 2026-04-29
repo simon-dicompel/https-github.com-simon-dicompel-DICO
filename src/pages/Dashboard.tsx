@@ -185,8 +185,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, refreshTrigger = 0 }
 
     try {
       if (editingUser.id) {
-        const { password, ...profileData } = editingUser;
-        await userService.update(profileData as User);
+        await userService.update(editingUser as User);
       } else {
         await userService.create(editingUser as any);
       }
@@ -736,12 +735,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, refreshTrigger = 0 }
                   {user.role === UserRole.SUPERVISOR && <p className="text-[8px] text-slate-400 mt-1 uppercase font-bold">Apenas administradores podem criar outros administradores.</p>}
                </div>
 
-               {!editingUser.id && (
+               {( !editingUser.id || user.role === UserRole.ADMIN ) && (
                  <div>
-                    <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest">Senha de Acesso Inicial</label>
+                    <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest">{editingUser.id ? 'Alterar Senha (Opcional)' : 'Senha de Acesso Inicial'}</label>
                     <div className="relative">
                        <Lock className="absolute inset-y-0 left-3 h-5 w-5 text-slate-500 my-auto" />
-                       <input required type="password" autoComplete="new-password" className={`${darkInput} pl-10`} value={editingUser.password || ''} onChange={e => setEditingUser({...editingUser, password: e.target.value})} placeholder="••••••••" />
+                       <input required={!editingUser.id} type="password" autoComplete="new-password" className={`${darkInput} pl-10`} value={editingUser.password || ''} onChange={e => setEditingUser({...editingUser, password: e.target.value})} placeholder={editingUser.id ? "Deixe em branco para não alterar" : "••••••••"} />
                     </div>
                  </div>
                )}
