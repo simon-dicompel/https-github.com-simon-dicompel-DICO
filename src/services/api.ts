@@ -17,6 +17,18 @@ export const productService = {
     if (!res.ok) throw new Error('Falha ao criar produto');
     return res.json();
   },
+  createBatch: async (products: Array<Partial<Product>>, updateExisting: boolean = true): Promise<{ success: boolean; total: number; inserted: number; updated: number; errors: string[] }> => {
+    const res = await fetch(`${API_BASE}/products/batch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ products, updateExisting }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Falha ao importar produtos em lote');
+    }
+    return res.json();
+  },
   update: async (product: Product): Promise<Product> => {
     const res = await fetch(`${API_BASE}/products/${product.id}`, {
       method: 'PUT',

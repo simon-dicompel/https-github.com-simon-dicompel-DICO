@@ -2,7 +2,8 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { User, UserRole, Order, Product, OrderStatus } from '../types';
 import { orderService, productService, userService, authService } from '../services/api';
 import { Button } from '../components/Button';
-import { Plus, Trash2, Edit2, Search, X, LayoutDashboard, ShoppingBag, ImageIcon, Upload, FileSpreadsheet, ExternalLink, Calendar, User as UserIcon, Phone, Mail, Package, ArrowRight, Save, Printer, Lock, LogOut, Palette, Eye, EyeOff, CheckCircle2, ShieldCheck, UserCheck, Briefcase, CheckSquare, Square, Filter, ChevronDown, Layers } from 'lucide-react';
+import { ProductImportModal } from '../components/ProductImportModal';
+import { Plus, Trash2, Edit2, Search, X, LayoutDashboard, ShoppingBag, ImageIcon, Upload, FileSpreadsheet, ExternalLink, Calendar, User as UserIcon, Phone, Mail, Package, ArrowRight, Save, Printer, Lock, LogOut, Palette, Eye, EyeOff, CheckCircle2, ShieldCheck, UserCheck, Briefcase, CheckSquare, Square, Filter, ChevronDown, Layers, UploadCloud } from 'lucide-react';
 
 interface DashboardProps {
   user: User;
@@ -26,6 +27,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, refreshTrigger = 0 }
   const [userSearch, setUserSearch] = useState('');
   
   const [showProductModal, setShowProductModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Partial<Product> | null>(null);
 
   const [showUserModal, setShowUserModal] = useState(false);
@@ -100,7 +102,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, refreshTrigger = 0 }
     });
   }, [products, productSearch, selectedProductCategory, selectedProductLine]);
 
-  // Categorias e Linhas únicas para os filtros (Unicidade total Case-Insensitive)
+  // Categorias, Linhas e Subcategorias únicas (Unicidade total Case-Insensitive)
   const productCategories = useMemo(() => {
     const unique = new Map<string, string>();
     products.forEach(p => {
@@ -123,6 +125,40 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, refreshTrigger = 0 }
       }
     });
     return Array.from(unique.values()).sort((a, b) => a.localeCompare(b));
+  }, [products]);
+
+  const productSubcategories = useMemo(() => {
+    const unique = new Map<string, string>();
+    products.forEach(p => {
+      const original = (p.subcategory || '').trim();
+      const key = original.toLowerCase();
+      if (key && !unique.has(key)) {
+        unique.set(key, original);
+      }
+    });
+    return Array.from(unique.values()).sort((a, b) => a.localeCompare(b));
+  }, [products]);
+
+  const productColorsList = useMemo(() => {
+    const unique = new Map<string, string>();
+    products.forEach(p => {
+      (p.colors || []).forEach(c => {
+        const original = c.trim();
+        const key = original.toLowerCase();
+        if (key && !unique.has(key)) {
+          unique.set(key, original);
+        }
+      });
+    });
+    return Array.from(unique.values()).sort((a, b) => a.localeCompare(b));
+  }, [products]);
+
+  const getProductCategoryCount = useCallback((cat: string) => {
+    return products.filter(p => (p.category || '').toLowerCase().trim() === cat.toLowerCase().trim()).length;
+  }, [products]);
+
+  const getProductLineCount = useCallback((line: string) => {
+    return products.filter(p => (p.line || '').toLowerCase().trim() === line.toLowerCase().trim()).length;
   }, [products]);
 
   const handleUpdateStatus = async (orderId: string, newStatus: OrderStatus) => {
@@ -394,11 +430,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, refreshTrigger = 0 }
                       <Search className="absolute inset-y-0 left-3 h-4 w-4 text-slate-400 my-auto" />
                       <input type="text" placeholder="Código, descrição ou referência..." className="pl-9 pr-4 py-2 border rounded-xl text-xs w-full bg-white shadow-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all" value={productSearch} onChange={(e) => { setProductSearch(e.target.value); setSelectedProductIds([]); }} />
                     </div>
-                    <div className="flex gap-2 w-full md:w-auto">
-                      <Button variant="outline" size="sm" className="flex-1 md:flex-none font-black uppercase text-[10px] h-10 gap-2 border-green-200 text-green-700 hover:bg-green-50" onClick={exportProductsToExcel}>
-                        <FileSpreadsheet className="h-4 w-4" /> {selectedProductIds.length > 0 ? `BAIXAR SELECIONADOS (${selectedProductIds.length})` : 'BAIXAR FILTRADOS (EXCEL)'}
+                    <div className="flex flex-wrap gap-2 w-full md:w-auto">
+                      <Button variant="outline" size="sm" className="flex-1 md:flex-none font-black uppercase text-[10px] h-10 gap-2 border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100" onClick={() => setShowImportModal(true)}>
+                        <UploadCloud className="h-4 w-4 text-emerald-600" /> IMPORTAR EXCEL & FOTOS
                       </Button>
-                      <Button size="sm" className="flex-1 md:flex-none font-black uppercase text-[10px] h-10" onClick={() => { setEditingProduct({ colors: [], amperage: '', category: '', line: '', details: '', subcategory: '' }); setShowProductModal(true); }}>
+                      <Button variant="outline" size="sm" className="flex-1 md:flex-none font-black uppercase text-[10px] h-10 gap-2 border-green-200 text-green-700 hover:bg-green-50" onClick={exportProductsToExcel}>
+                        <FileSpreadsheet className="h-4 w-4" /> {selectedProductIds.length > 0 ? `BAIXAR (${selectedProductIds.length})` : 'BAIXAR EXCEL'}
+                      </Button>
+                      <Button size="sm" className="flex-1 md:flex-none font-black uppercase text-[10px] h-10 shadow-sm" onClick={() => { setEditingProduct({ colors: [], amperage: '', category: '', line: '', details: '', subcategory: '' }); setShowProductModal(true); }}>
                         + NOVO PRODUTO
                       </Button>
                     </div>
@@ -413,8 +452,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, refreshTrigger = 0 }
                         onChange={(e) => { setSelectedProductCategory(e.target.value); setSelectedProductIds([]); }} 
                         className="w-full pl-10 pr-10 py-2.5 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase appearance-none focus:outline-none focus:ring-2 focus:ring-blue-500"
                       >
-                        <option value="all">Todas as Categorias</option>
-                        {productCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                        <option value="all">Todas as Categorias ({products.length})</option>
+                        {productCategories.map(c => (
+                          <option key={c} value={c}>
+                            {c} ({getProductCategoryCount(c)})
+                          </option>
+                        ))}
                       </select>
                       <ChevronDown className="absolute right-3 top-3 h-4 w-4 text-slate-400 pointer-events-none" />
                     </div>
@@ -425,8 +468,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, refreshTrigger = 0 }
                         onChange={(e) => { setSelectedProductLine(e.target.value); setSelectedProductIds([]); }} 
                         className="w-full pl-10 pr-10 py-2.5 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase appearance-none focus:outline-none focus:ring-2 focus:ring-blue-500"
                       >
-                        <option value="all">Todas as Linhas</option>
-                        {productLines.map(l => <option key={l} value={l}>{l}</option>)}
+                        <option value="all">Todas as Linhas ({products.length})</option>
+                        {productLines.map(l => (
+                          <option key={l} value={l}>
+                            {l} ({getProductLineCount(l)})
+                          </option>
+                        ))}
                       </select>
                       <ChevronDown className="absolute right-3 top-3 h-4 w-4 text-slate-400 pointer-events-none" />
                     </div>
@@ -1047,21 +1094,150 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, refreshTrigger = 0 }
                 </div>
 
                 <div className="md:col-span-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest">Cores (separadas por vírgula)</label>
+                  <div className="flex justify-between items-center mb-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Cores (separadas por vírgula)</label>
+                    {productColorsList.length > 0 && (
+                      <span className="text-[9px] font-bold text-blue-400">Sugestões de Cores</span>
+                    )}
+                  </div>
                   <div className="relative">
                     <Palette className="absolute inset-y-0 left-3 h-4 w-4 text-slate-500 my-auto" />
-                    <input type="text" className={`${darkInput} pl-10`} value={editingProduct.colors?.join(', ') || ''} onChange={e => setEditingProduct({...editingProduct, colors: e.target.value.split(',').map(s => s.trim())})} placeholder="Ex: Branco, Preto, Ouro" />
+                    <input 
+                      type="text" 
+                      className={`${darkInput} pl-10`} 
+                      value={editingProduct.colors?.join(', ') || ''} 
+                      onChange={e => setEditingProduct({...editingProduct, colors: e.target.value.split(',').map(s => s.trim())})} 
+                      placeholder="Ex: Branco, Preto, Ouro, Grafite..." 
+                    />
+                  </div>
+                  {productColorsList.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5 max-h-16 overflow-y-auto">
+                      {productColorsList.map(cor => {
+                        const currentColors = editingProduct.colors || [];
+                        const isSelected = currentColors.some(c => c.toLowerCase() === cor.toLowerCase());
+                        return (
+                          <button
+                            key={cor}
+                            type="button"
+                            onClick={() => {
+                              if (isSelected) {
+                                setEditingProduct({
+                                  ...editingProduct,
+                                  colors: currentColors.filter(c => c.toLowerCase() !== cor.toLowerCase())
+                                });
+                              } else {
+                                setEditingProduct({
+                                  ...editingProduct,
+                                  colors: [...currentColors.filter(c => Boolean(c)), cor]
+                                });
+                              }
+                            }}
+                            className={`text-[9px] px-2 py-0.5 rounded-md font-bold uppercase transition-all ${
+                              isSelected
+                                ? 'bg-blue-600 text-white shadow-sm'
+                                : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                            }`}
+                          >
+                            {isSelected ? `✓ ${cor}` : `+ ${cor}`}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Linha com Lista Suspensa / Datalist */}
+                <div>
+                  <div className="flex justify-between items-center mb-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Linha *</label>
+                    {productLines.length > 0 && (
+                      <span className="text-[9px] font-bold text-blue-400">{productLines.length} cadastradas</span>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    {/* Select rápido com opções já cadastradas */}
+                    {productLines.length > 0 && (
+                      <select
+                        value={editingProduct.line || ''}
+                        onChange={e => {
+                          if (e.target.value) {
+                            setEditingProduct({...editingProduct, line: e.target.value});
+                          }
+                        }}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white text-xs font-bold focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                      >
+                        <option value="">-- Selecionar Linha Existente --</option>
+                        {productLines.map(l => (
+                          <option key={l} value={l}>
+                            {l} ({getProductLineCount(l)} itens)
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    <div className="relative">
+                      <input 
+                        required 
+                        type="text" 
+                        list="modal-product-lines-list" 
+                        className={darkInput} 
+                        value={editingProduct.line || ''} 
+                        onChange={e => setEditingProduct({...editingProduct, line: e.target.value})} 
+                        placeholder="Ou digite o nome da linha..." 
+                      />
+                      <datalist id="modal-product-lines-list">
+                        {productLines.map(l => (
+                          <option key={l} value={l} />
+                        ))}
+                      </datalist>
+                    </div>
                   </div>
                 </div>
 
+                {/* Categoria com Lista Suspensa / Datalist */}
                 <div>
-                  <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest">Linha</label>
-                  <input required type="text" className={darkInput} value={editingProduct.line || ''} onChange={e => setEditingProduct({...editingProduct, line: e.target.value})} placeholder="Ex: Novara, Classic..." />
-                </div>
-
-                <div>
-                   <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest">Categoria</label>
-                   <input required type="text" className={darkInput} value={editingProduct.category || ''} onChange={e => setEditingProduct({...editingProduct, category: e.target.value})} placeholder="Ex: Tomadas, Interruptores..." />
+                   <div className="flex justify-between items-center mb-2">
+                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Categoria *</label>
+                     {productCategories.length > 0 && (
+                       <span className="text-[9px] font-bold text-blue-400">{productCategories.length} cadastradas</span>
+                     )}
+                   </div>
+                   <div className="space-y-2">
+                     {/* Select rápido com opções já cadastradas */}
+                     {productCategories.length > 0 && (
+                       <select
+                         value={editingProduct.category || ''}
+                         onChange={e => {
+                           if (e.target.value) {
+                             setEditingProduct({...editingProduct, category: e.target.value});
+                           }
+                         }}
+                         className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white text-xs font-bold focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                       >
+                         <option value="">-- Selecionar Categoria Existente --</option>
+                         {productCategories.map(c => (
+                           <option key={c} value={c}>
+                             {c} ({getProductCategoryCount(c)} itens)
+                           </option>
+                         ))}
+                       </select>
+                     )}
+                     <div className="relative">
+                       <input 
+                         required 
+                         type="text" 
+                         list="modal-product-categories-list" 
+                         className={darkInput} 
+                         value={editingProduct.category || ''} 
+                         onChange={e => setEditingProduct({...editingProduct, category: e.target.value})} 
+                         placeholder="Ou digite o nome da categoria..." 
+                       />
+                       <datalist id="modal-product-categories-list">
+                         {productCategories.map(c => (
+                           <option key={c} value={c} />
+                         ))}
+                       </datalist>
+                     </div>
+                   </div>
                 </div>
                 
                 <div>
@@ -1070,8 +1246,27 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, refreshTrigger = 0 }
                 </div>
 
                 <div>
-                   <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest">Subcategoria</label>
-                   <input type="text" className={darkInput} value={editingProduct.subcategory || ''} onChange={e => setEditingProduct({...editingProduct, subcategory: e.target.value})} />
+                   <div className="flex justify-between items-center mb-2">
+                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Subcategoria</label>
+                     {productSubcategories.length > 0 && (
+                       <span className="text-[9px] font-bold text-blue-400">{productSubcategories.length} cadastradas</span>
+                     )}
+                   </div>
+                   <div className="relative">
+                     <input 
+                       type="text" 
+                       list="modal-product-subcategories-list" 
+                       className={darkInput} 
+                       value={editingProduct.subcategory || ''} 
+                       onChange={e => setEditingProduct({...editingProduct, subcategory: e.target.value})} 
+                       placeholder="Selecione ou digite..." 
+                     />
+                     <datalist id="modal-product-subcategories-list">
+                       {productSubcategories.map(sc => (
+                         <option key={sc} value={sc} />
+                       ))}
+                     </datalist>
+                   </div>
                 </div>
               </div>
 
@@ -1094,6 +1289,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, refreshTrigger = 0 }
           </div>
         </div>
       )}
+
+      {/* Modal de Importação Excel e Fotos */}
+      <ProductImportModal 
+        isOpen={showImportModal} 
+        onClose={() => setShowImportModal(false)} 
+        onSuccess={() => loadData(true)} 
+        existingProducts={products} 
+      />
     </div>
   );
 };

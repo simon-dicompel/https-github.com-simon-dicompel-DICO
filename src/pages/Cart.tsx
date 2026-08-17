@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { CartItem, User } from '../types';
 import { userService, orderService } from '../services/api';
-import { Trash2, Printer, ArrowLeft, Package, User as UserIcon, FileSpreadsheet, CheckCircle } from 'lucide-react';
+import { Trash2, Printer, ArrowLeft, Package, User as UserIcon, FileSpreadsheet, CheckCircle, Plus, Minus, ShoppingCart, ShoppingBag, ArrowRight } from 'lucide-react';
 import { Button } from '../components/Button';
 
 interface CartProps {
@@ -34,6 +34,12 @@ export const Cart: React.FC<CartProps> = ({ items, updateQuantity, removeItem, c
       setReps(data);
     } catch (err) {
       console.error("Erro ao carregar representantes:", err);
+    }
+  };
+
+  const handleClearCart = () => {
+    if (window.confirm("Deseja realmente esvaziar todo o carrinho?")) {
+      clearCart();
     }
   };
 
@@ -88,6 +94,8 @@ export const Cart: React.FC<CartProps> = ({ items, updateQuantity, removeItem, c
     window.print();
   };
 
+  const totalQuantity = items.reduce((acc, it) => acc + it.quantity, 0);
+
   const darkInputStyle = "w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-white placeholder-slate-500 focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all shadow-sm";
 
   if (submitted) {
@@ -96,26 +104,34 @@ export const Cart: React.FC<CartProps> = ({ items, updateQuantity, removeItem, c
         <div className="bg-green-100 rounded-full h-20 w-20 flex items-center justify-center mx-auto mb-6">
           <CheckCircle className="h-10 w-10 text-green-600" />
         </div>
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">Pedido Enviado!</h2>
+        <h2 className="text-2xl font-bold text-gray-900 mb-2">Pedido Enviado com Sucesso!</h2>
         <p className="text-gray-600 mb-8">O representante recebeu sua solicitação e entrará em contato.</p>
-        <Button onClick={() => navigate('catalog')}>Voltar ao Catálogo</Button>
+        <Button onClick={() => navigate('catalog')} className="gap-2">
+          <ShoppingBag className="h-4 w-4" /> Voltar ao Catálogo de Produtos
+        </Button>
       </div>
     );
   }
 
   if (items.length === 0) {
     return (
-      <div className="text-center py-20 bg-white rounded-xl border border-dashed p-10 no-print">
-        <Package className="h-12 w-12 text-slate-300 mx-auto mb-4" />
-        <h2 className="text-xl font-bold text-slate-400">Seu carrinho está vazio</h2>
-        <p className="text-slate-400 mb-8">Adicione produtos para gerar sua cotação.</p>
-        <Button onClick={() => navigate('catalog')}>Ir para o Catálogo</Button>
+      <div className="text-center py-20 bg-white rounded-2xl border-2 border-dashed border-slate-200 p-10 max-w-2xl mx-auto shadow-sm no-print">
+        <div className="h-16 w-16 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+          <ShoppingCart className="h-8 w-8" />
+        </div>
+        <h2 className="text-2xl font-black text-slate-800 mb-2">Seu carrinho está vazio</h2>
+        <p className="text-slate-500 mb-8 max-w-md mx-auto">
+          Explore o nosso catálogo para adicionar interruptores, tomadas, placas Novara e outros produtos à sua cotação.
+        </p>
+        <Button onClick={() => navigate('catalog')} size="lg" className="font-black uppercase tracking-wider gap-2">
+          <ArrowLeft className="h-4 w-4" /> Ir para o Catálogo
+        </Button>
       </div>
     );
   }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8">
+    <div className="max-w-4xl mx-auto space-y-8 pb-16">
       {/* Layout de Impressão Oculto */}
       <div className="hidden print-layout">
          <div className="flex justify-between items-start border-b-4 border-slate-900 pb-8 mb-8">
@@ -164,68 +180,165 @@ export const Cart: React.FC<CartProps> = ({ items, updateQuantity, removeItem, c
          </div>
       </div>
 
-      <div className="flex items-center justify-between no-print">
-        <button onClick={() => navigate('catalog')} className="flex items-center text-slate-500 hover:text-blue-600 font-bold transition-colors">
-          <ArrowLeft className="h-5 w-5 mr-2" /> Voltar ao Catálogo
-        </button>
-        <div className="flex gap-2">
-           <button onClick={exportToExcel} className="flex items-center gap-2 bg-green-50 hover:bg-green-100 text-green-700 px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all border border-green-100">
+      {/* Top Navigation Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-200 no-print">
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={() => navigate('catalog')} 
+            className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-4 py-2.5 rounded-xl font-black text-xs uppercase tracking-wider shadow-md hover:shadow-lg transition-all"
+          >
+            <ArrowLeft className="h-4 w-4" /> Continuar Comprando
+          </button>
+          <span className="text-xs text-slate-500 font-bold hidden sm:inline-block">
+            {totalQuantity} {totalQuantity === 1 ? 'item' : 'itens'} no carrinho
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2">
+           <button 
+             onClick={handleClearCart} 
+             className="flex items-center gap-1.5 bg-red-50 hover:bg-red-100 text-red-700 px-3 py-2 rounded-xl text-xs font-bold transition-all border border-red-200"
+             title="Esvaziar todos os itens do carrinho"
+           >
+              <Trash2 className="h-4 w-4"/>
+              <span>Limpar</span>
+           </button>
+           <button onClick={exportToExcel} className="flex items-center gap-1.5 bg-green-50 hover:bg-green-100 text-green-700 px-3 py-2 rounded-xl text-xs font-bold transition-all border border-green-200">
               <FileSpreadsheet className="h-4 w-4"/> Excel
            </button>
-           <button onClick={printCart} className="flex items-center gap-2 bg-blue-50 hover:bg-blue-100 text-blue-700 px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all border border-blue-100">
+           <button onClick={printCart} className="flex items-center gap-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 px-3 py-2 rounded-xl text-xs font-bold transition-all border border-blue-200">
               <Printer className="h-4 w-4"/> Imprimir
            </button>
         </div>
       </div>
 
-      <div className="bg-white shadow-sm rounded-xl border border-slate-200 overflow-hidden no-print">
+      {/* Product List */}
+      <div className="bg-white shadow-sm rounded-2xl border border-slate-200 overflow-hidden no-print">
+        <div className="p-4 sm:p-6 bg-slate-50/70 border-b border-slate-200 flex items-center justify-between">
+          <h3 className="font-black text-slate-800 uppercase text-xs tracking-wider flex items-center gap-2">
+            <Package className="h-4 w-4 text-blue-600" />
+            Produtos no Carrinho ({items.length} {items.length === 1 ? 'modelo' : 'modelos'})
+          </h3>
+          <span className="text-xs font-bold bg-blue-100 text-blue-800 px-2.5 py-1 rounded-lg">
+            Total: {totalQuantity} un.
+          </span>
+        </div>
+
         <div className="divide-y divide-slate-100">
           {items.map(item => (
-            <div key={item.id} className="p-6 flex flex-col sm:flex-row items-center gap-6">
-              <img src={item.imageUrl} alt={item.code} className="w-20 h-20 object-contain rounded border bg-slate-50 p-2" />
-              <div className="flex-grow text-center sm:text-left">
-                <h4 className="font-bold text-slate-900">{item.description}</h4>
-                <div className="text-[10px] text-slate-400 font-bold uppercase mt-1">Ref: {item.reference} | {item.code}</div>
+            <div key={item.id} className="p-4 sm:p-6 flex flex-col sm:flex-row items-center gap-4 sm:gap-6 hover:bg-slate-50/50 transition-colors">
+              <div className="w-20 h-20 flex-shrink-0 bg-slate-50 border border-slate-200 rounded-xl p-2 flex items-center justify-center">
+                <img src={item.imageUrl} alt={item.code} className="max-w-full max-h-full object-contain" />
               </div>
-              <div className="flex items-center gap-4">
-                <div className="flex items-center border border-slate-200 rounded-lg bg-slate-50">
-                  <button className="px-3 py-1 hover:bg-slate-200" onClick={() => updateQuantity(item.id, Math.max(1, item.quantity - 1))}>-</button>
-                  <input type="number" min="1" className="w-12 text-center bg-white font-bold text-sm" value={item.quantity} onChange={(e) => updateQuantity(item.id, parseInt(e.target.value) || 1)} />
-                  <button className="px-3 py-1 hover:bg-slate-200" onClick={() => updateQuantity(item.id, item.quantity + 1)}>+</button>
+
+              <div className="flex-grow text-center sm:text-left">
+                <h4 className="font-bold text-slate-900 text-sm sm:text-base leading-snug">{item.description}</h4>
+                <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 mt-1.5">
+                  <span className="text-[10px] bg-slate-100 text-slate-600 font-black px-2 py-0.5 rounded border border-slate-200 uppercase">
+                    Ref: {item.reference}
+                  </span>
+                  <span className="text-[10px] bg-slate-100 text-slate-600 font-bold px-2 py-0.5 rounded border border-slate-200 uppercase">
+                    Cód: {item.code}
+                  </span>
+                  {item.line && (
+                    <span className="text-[10px] bg-blue-50 text-blue-700 font-black px-2 py-0.5 rounded border border-blue-100 uppercase">
+                      Linha: {item.line}
+                    </span>
+                  )}
                 </div>
-                <button onClick={() => removeItem(item.id)} className="text-slate-400 hover:text-red-500"><Trash2 className="h-5 w-5" /></button>
+              </div>
+
+              {/* Quantity Controls and Actions */}
+              <div className="flex items-center gap-4">
+                <div className="flex flex-col items-center sm:items-end">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase mb-1">Quantidade</span>
+                  <div className="flex items-center border border-slate-300 rounded-xl bg-white shadow-sm overflow-hidden">
+                    <button 
+                      type="button"
+                      className="px-3 py-2 text-slate-600 hover:bg-slate-100 active:bg-slate-200 transition-colors" 
+                      onClick={() => updateQuantity(item.id, Math.max(1, item.quantity - 1))}
+                      title="Diminuir quantidade"
+                    >
+                      <Minus className="h-3.5 w-3.5" />
+                    </button>
+                    <input 
+                      type="number" 
+                      min="1" 
+                      className="w-14 text-center bg-slate-50 font-black text-sm py-1.5 focus:outline-none focus:bg-blue-50 border-x border-slate-200 text-slate-800" 
+                      value={item.quantity} 
+                      onChange={(e) => updateQuantity(item.id, Math.max(1, parseInt(e.target.value) || 1))} 
+                    />
+                    <button 
+                      type="button"
+                      className="px-3 py-2 text-slate-600 hover:bg-slate-100 active:bg-slate-200 transition-colors" 
+                      onClick={() => updateQuantity(item.id, item.quantity + 1)}
+                      title="Aumentar quantidade"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                <button 
+                  type="button"
+                  onClick={() => removeItem(item.id)} 
+                  className="p-2.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
+                  title="Remover produto do carrinho"
+                >
+                  <Trash2 className="h-5 w-5" />
+                </button>
               </div>
             </div>
           ))}
         </div>
+
+        {/* Action bar below item list */}
+        <div className="p-4 sm:p-5 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <button 
+            type="button"
+            onClick={() => navigate('catalog')}
+            className="flex items-center gap-2 text-blue-600 hover:text-blue-800 font-black text-xs uppercase tracking-wider transition-colors py-2 px-3 rounded-lg hover:bg-blue-50"
+          >
+            <Plus className="h-4 w-4" /> Adicionar Mais Produtos ao Carrinho
+          </button>
+          
+          <a
+            href="#orcamento-form"
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider shadow-md transition-all"
+          >
+            <span>Preencher Cotação</span>
+            <ArrowRight className="h-4 w-4" />
+          </a>
+        </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="bg-white shadow-sm rounded-xl p-8 border border-slate-200 no-print">
-        <h3 className="text-lg font-bold text-slate-900 mb-6 flex items-center gap-2">
-           <UserIcon className="h-5 w-5 text-blue-600"/> Dados do Orçamento
+      {/* Quote Form */}
+      <form id="orcamento-form" onSubmit={handleSubmit} className="bg-white shadow-sm rounded-2xl p-6 sm:p-8 border border-slate-200 no-print">
+        <h3 className="text-lg font-black text-slate-900 mb-6 flex items-center gap-2">
+           <UserIcon className="h-5 w-5 text-blue-600"/> Dados do Orçamento / Solicitação
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
           <div>
-            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Seu Nome / Responsável</label>
-            <input required type="text" className={darkInputStyle} value={customerName} onChange={e => setCustomerName(e.target.value)} />
+            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Seu Nome / Responsável *</label>
+            <input required type="text" className={darkInputStyle} placeholder="Ex: João da Silva" value={customerName} onChange={e => setCustomerName(e.target.value)} />
           </div>
           <div>
             <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Nome da Revenda / Loja</label>
-            <input type="text" className={darkInputStyle} value={resellerName} onChange={e => setResellerName(e.target.value)} />
+            <input type="text" className={darkInputStyle} placeholder="Ex: Elétrica Central Ltda" value={resellerName} onChange={e => setResellerName(e.target.value)} />
           </div>
           <div>
-            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">E-mail para Retorno</label>
-            <input required type="email" className={darkInputStyle} value={customerEmail} onChange={e => setCustomerEmail(e.target.value)} />
+            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">E-mail para Retorno *</label>
+            <input required type="email" className={darkInputStyle} placeholder="Ex: joao@email.com" value={customerEmail} onChange={e => setCustomerEmail(e.target.value)} />
           </div>
           <div>
-            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Telefone (WhatsApp)</label>
-            <input required type="text" className={darkInputStyle} value={customerContact} onChange={e => setCustomerContact(e.target.value)} />
+            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Telefone (WhatsApp) *</label>
+            <input required type="text" className={darkInputStyle} placeholder="Ex: (11) 99999-9999" value={customerContact} onChange={e => setCustomerContact(e.target.value)} />
           </div>
         </div>
         <div className="mb-6">
-           <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Escolha o Representante Dicompel</label>
+           <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Escolha o Representante Dicompel *</label>
            <select required className={darkInputStyle} value={selectedRep} onChange={e => setSelectedRep(e.target.value)}>
-             <option value="" className="bg-slate-800">-- Clique para Selecionar --</option>
+             <option value="" className="bg-slate-800">-- Clique para Selecionar o Representante --</option>
              {reps.map(rep => <option key={rep.id} value={rep.id} className="bg-slate-800">{rep.name}</option>)}
            </select>
         </div>
@@ -236,10 +349,12 @@ export const Cart: React.FC<CartProps> = ({ items, updateQuantity, removeItem, c
             rows={3} 
             value={notes} 
             onChange={(e) => setNotes(e.target.value)} 
-            placeholder="Detalhes sobre frete, cores específicas ou urgência..."
+            placeholder="Detalhes sobre frete, cores específicas, urgência na entrega..."
           />
         </div>
-        <Button type="submit" size="lg" className="w-full h-14 font-black uppercase tracking-[0.2em]">ENVIAR SOLICITAÇÃO</Button>
+        <Button type="submit" size="lg" className="w-full h-14 font-black uppercase tracking-[0.2em] shadow-lg shadow-blue-500/20">
+          ENVIAR SOLICITAÇÃO DE COTAÇÃO
+        </Button>
       </form>
     </div>
   );

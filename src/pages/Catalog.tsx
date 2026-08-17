@@ -1,12 +1,15 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Product } from '../types';
 import { productService } from '../services/api';
-import { Search, Info, Check, Plus, Camera, Sparkles, AlertCircle, X, Filter, ChevronDown, Layers, Image as ImageIcon, Box, ArrowLeft, Settings2, HelpCircle, ShoppingBag, MessageCircle, UserCheck } from 'lucide-react';
+import { Search, Info, Check, Plus, Camera, Sparkles, AlertCircle, X, Filter, ChevronDown, Layers, Image as ImageIcon, Box, ArrowLeft, Settings2, HelpCircle, ShoppingBag, MessageCircle, UserCheck, ShoppingCart, ArrowRight, FileSpreadsheet } from 'lucide-react';
 import { Button } from '../components/Button';
+import { ProductImportModal } from '../components/ProductImportModal';
 import { GoogleGenAI, Type } from "@google/genai";
 
 interface CatalogProps {
   addToCart: (product: Product) => void;
+  cartCount?: number;
+  navigate?: (page: string) => void;
 }
 
 interface AIResult {
@@ -23,7 +26,7 @@ interface AISearchResult {
   aiData: AIResult;
 }
 
-export const Catalog: React.FC<CatalogProps> = ({ addToCart }) => {
+export const Catalog: React.FC<CatalogProps> = ({ addToCart, cartCount = 0, navigate }) => {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [addedIds, setAddedIds] = useState<string[]>([]);
@@ -34,6 +37,7 @@ export const Catalog: React.FC<CatalogProps> = ({ addToCart }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedLine, setSelectedLine] = useState('all');
+  const [selectedColor, setSelectedColor] = useState('all');
 
   // Controle Monte sua Novara
   const [selectedPlatesForKit, setSelectedPlatesForKit] = useState<Product[]>([]);
@@ -49,6 +53,7 @@ export const Catalog: React.FC<CatalogProps> = ({ addToCart }) => {
   const [aiSearchResult, setAiSearchResult] = useState<AISearchResult | null>(null);
   
   const [showHowToBuy, setShowHowToBuy] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -79,8 +84,9 @@ export const Catalog: React.FC<CatalogProps> = ({ addToCart }) => {
       setLoading(true);
       const data = await productService.getAll();
       setProducts(data || []);
-    } catch (e) {
+    } catch (e: any) {
       console.error("Erro ao carregar catálogo:", e);
+      alert(`Erro ao carregar produtos: ${e.message}. Verifique a conexão com o banco de dados.`);
     } finally {
       setLoading(false);
     }
@@ -97,6 +103,9 @@ export const Catalog: React.FC<CatalogProps> = ({ addToCart }) => {
     }
     if (selectedLine !== 'all' && selectedLine !== 'Novara') {
       result = result.filter(p => (p.line || '').toLowerCase().trim() === selectedLine.toLowerCase().trim());
+    }
+    if (selectedColor !== 'all') {
+      result = result.filter(p => p.colors && p.colors.some(c => c.toLowerCase().trim() === selectedColor.toLowerCase().trim()));
     }
     return result;
   };
@@ -265,6 +274,18 @@ export const Catalog: React.FC<CatalogProps> = ({ addToCart }) => {
     return Array.from(unique.values()).sort();
   }, [products]);
 
+  const allColors = useMemo(() => {
+    const unique = new Map<string, string>();
+    products.forEach(p => {
+      (p.colors || []).forEach(c => {
+        const original = c.trim();
+        const key = original.toLowerCase();
+        if (key && !unique.has(key)) unique.set(key, original);
+      });
+    });
+    return Array.from(unique.values()).sort();
+  }, [products]);
+
   return (
     <div className="space-y-6 pb-20">
       <div className="flex flex-col gap-6">
@@ -273,7 +294,10 @@ export const Catalog: React.FC<CatalogProps> = ({ addToCart }) => {
             <h2 className="text-2xl font-bold text-slate-800 uppercase tracking-tight">Dicompel Digital</h2>
             <p className="text-slate-600 text-sm">Catálogo e Configurador de Kits.</p>
           </div>
-          <div className="flex gap-2 w-full md:w-auto">
+          <div className="flex flex-wrap gap-2 w-full md:w-auto">
+            <Button variant="outline" size="sm" className="flex-1 md:flex-none bg-white font-black uppercase tracking-widest text-[10px] h-11 px-5 border-emerald-300 text-emerald-700 hover:bg-emerald-50 shadow-sm" onClick={() => setShowImportModal(true)}>
+              <FileSpreadsheet className="h-4 w-4 mr-2 text-emerald-600" /> Importar Excel
+            </Button>
             <Button variant="outline" size="sm" className="flex-1 md:flex-none bg-white font-black uppercase tracking-widest text-[10px] h-11 px-6 border-slate-200" onClick={() => setShowHowToBuy(true)}>
               <HelpCircle className="h-4 w-4 mr-2" /> Como Comprar
             </Button>
@@ -294,7 +318,7 @@ export const Catalog: React.FC<CatalogProps> = ({ addToCart }) => {
       </div>
 
       {activeTab === 'general' ? (
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
           <div className="relative">
             <Search className="absolute inset-y-0 left-3 h-4 w-4 text-slate-400 my-auto" />
             <input type="text" className="w-full pl-10 pr-3 py-3 border rounded-xl text-xs bg-slate-50 border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Código ou nome do produto..." value={searchTerm} onChange={(e) => { setSearchTerm(e.target.value); setVisibleCount(24); }} />
@@ -302,16 +326,33 @@ export const Catalog: React.FC<CatalogProps> = ({ addToCart }) => {
           <div className="relative">
              <Filter className="absolute left-3 top-3.5 h-4 w-4 text-slate-400" />
              <select value={selectedCategory} onChange={(e) => { setSelectedCategory(e.target.value); setVisibleCount(24); }} className="w-full pl-10 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold appearance-none focus:outline-none">
-                <option value="all">Todas as Categorias</option>
-                {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                <option value="all">Todas as Categorias ({products.length})</option>
+                {categories.map(c => {
+                  const count = products.filter(p => (p.category || '').toLowerCase().trim() === c.toLowerCase().trim()).length;
+                  return <option key={c} value={c}>{c} ({count})</option>;
+                })}
              </select>
              <ChevronDown className="absolute right-3 top-3.5 h-4 w-4 text-slate-400 pointer-events-none" />
           </div>
           <div className="relative">
              <Layers className="absolute left-3 top-3.5 h-4 w-4 text-slate-400" />
              <select value={selectedLine} onChange={(e) => { setSelectedLine(e.target.value); setVisibleCount(24); }} className="w-full pl-10 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold appearance-none focus:outline-none">
-                <option value="all">Todas as Linhas</option>
-                {lines.map(l => <option key={l} value={l}>{l}</option>)}
+                <option value="all">Todas as Linhas ({products.length})</option>
+                {lines.map(l => {
+                  const count = products.filter(p => (p.line || '').toLowerCase().trim() === l.toLowerCase().trim()).length;
+                  return <option key={l} value={l}>{l} ({count})</option>;
+                })}
+             </select>
+             <ChevronDown className="absolute right-3 top-3.5 h-4 w-4 text-slate-400 pointer-events-none" />
+          </div>
+          <div className="relative">
+             <ImageIcon className="absolute left-3 top-3.5 h-4 w-4 text-slate-400" />
+             <select value={selectedColor} onChange={(e) => { setSelectedColor(e.target.value); setVisibleCount(24); }} className="w-full pl-10 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold appearance-none focus:outline-none">
+                <option value="all">Todas as Cores ({allColors.length})</option>
+                {allColors.map(c => {
+                  const count = products.filter(p => (p.colors || []).some(col => col.toLowerCase().trim() === c.toLowerCase().trim())).length;
+                  return <option key={c} value={c}>{c} ({count})</option>;
+                })}
              </select>
              <ChevronDown className="absolute right-3 top-3.5 h-4 w-4 text-slate-400 pointer-events-none" />
           </div>
@@ -594,6 +635,43 @@ export const Catalog: React.FC<CatalogProps> = ({ addToCart }) => {
           </div>
         </div>
       )}
+
+      {/* Floating Bottom Cart Bar */}
+      {cartCount > 0 && navigate && (
+        <div className="fixed bottom-4 left-0 right-0 z-40 px-4 pointer-events-none">
+          <div className="max-w-xl mx-auto bg-slate-900/95 backdrop-blur-md text-white px-5 py-3.5 rounded-2xl shadow-2xl border border-slate-700/80 flex items-center justify-between pointer-events-auto transition-all animate-bounce-short">
+            <div className="flex items-center gap-3">
+              <div className="relative p-2.5 bg-blue-600 rounded-xl text-white shadow-lg">
+                <ShoppingCart className="h-5 w-5" />
+                <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-black h-5 w-5 rounded-full flex items-center justify-center border-2 border-slate-900">
+                  {cartCount}
+                </span>
+              </div>
+              <div>
+                <p className="text-xs font-bold text-white leading-tight">
+                  {cartCount} {cartCount === 1 ? 'produto selecionado' : 'produtos no carrinho'}
+                </p>
+                <p className="text-[11px] text-slate-400">Continue adicionando ou finalize a cotação</p>
+              </div>
+            </div>
+            <button
+              onClick={() => navigate('cart')}
+              className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white px-4 py-2.5 rounded-xl font-black text-xs uppercase tracking-wider shadow-lg shadow-blue-500/20 active:scale-95 transition-all"
+            >
+              <span>Ver Carrinho</span>
+              <ArrowRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Importação Excel e Fotos */}
+      <ProductImportModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        onSuccess={loadProducts}
+        existingProducts={products}
+      />
     </div>
   );
 };

@@ -233,11 +233,25 @@ app.get("/api/db-check", async (req, res) => {
     // PRODUCTS
     app.get("/api/products", async (req, res) => {
         try {
-            const result = await executeQuery('SELECT * FROM Products ORDER BY ProductName');
+            console.log(">> [API] GET /api/products requested");
+            // Mais flexível: tenta ordenar por nomes comuns, ou nada se falhar
+            let result;
+            try {
+                result = await executeQuery('SELECT * FROM Products ORDER BY ProductName');
+            } catch (sortErr) {
+                console.warn(">> [API] Falha ao ordenar por ProductName, tentando sem ordenação", sortErr);
+                result = await executeQuery('SELECT * FROM Products');
+            }
+            
+            console.log(`>> [API] Encontrados ${result.recordset.length} produtos`);
             res.json(result.recordset.map(mapProduct));
         } catch (err: any) {
-            console.error(">> [API] Error GET /api/products:", err);
-            res.status(500).json({ error: err.message });
+            console.error(">> [API] Erro CRÍTICO ao buscar produtos:", err);
+            res.status(500).json({ 
+                error: "Erro ao buscar produtos no banco de dados.", 
+                details: err.message,
+                code: err.code
+            });
         }
     });
 
@@ -258,6 +272,90 @@ app.get("/api/db-check", async (req, res) => {
             res.json(mapProduct(result.recordset[0]));
         } catch (err: any) {
             res.status(500).json({ error: err.message });
+        }
+    });
+
+    app.post("/api/products/batch", async (req, res) => {
+        try {
+            const currentPool = await getPool();
+            const { products, updateExisting = true } = req.body;
+            if (!Array.isArray(products) || products.length === 0) {
+                return res.status(400).json({ error: "Nenhum produto fornecido para importação." });
+            }
+
+            let inserted = 0;
+            let updated = 0;
+            const errors: string[] = [];
+
+            for (const p of products) {
+                try {
+                    const code = (p.code || p.reference || '').trim();
+                    const name = (p.description || p.name || '').trim();
+                    const category = (p.category || 'Geral').trim();
+                    const line = (p.line || '').trim();
+                    const specs = (p.details || '').trim();
+                    const image = (p.imageUrl || '').trim();
+
+                    if (!code && !name) {
+                        errors.push(`Produto sem código e sem nome foi ignorado.`);
+                        continue;
+                    }
+
+                    // Se tem código, verifica se já existe
+                    let existingId: string | null = null;
+                    if (code) {
+                        const checkResult = await currentPool.request()
+                            .input('code', sql.NVarChar, code)
+                            .query('SELECT TOP 1 ProductID FROM Products WHERE ProductCode = @code');
+                        if (checkResult.recordset.length > 0) {
+                            existingId = checkResult.recordset[0].ProductID;
+                        }
+                    }
+
+                    if (existingId) {
+                        if (updateExisting) {
+                            await currentPool.request()
+                                .input('id', sql.UniqueIdentifier, existingId)
+                                .input('name', sql.NVarChar, name)
+                                .input('category', sql.NVarChar, category)
+                                .input('line', sql.NVarChar, line)
+                                .input('specs', sql.NVarChar, specs)
+                                .input('image', sql.NVarChar, image)
+                                .query(`UPDATE Products 
+                                        SET ProductName = @name, Category = @category, Line = @line, 
+                                            TechnicalSpecs = @specs, 
+                                            ImageData = CASE WHEN @image != '' THEN @image ELSE ImageData END
+                                        WHERE ProductID = @id`);
+                            updated++;
+                        }
+                    } else {
+                        await currentPool.request()
+                            .input('code', sql.NVarChar, code || `PROD-${Date.now()}`)
+                            .input('name', sql.NVarChar, name || 'Produto Sem Nome')
+                            .input('category', sql.NVarChar, category)
+                            .input('line', sql.NVarChar, line)
+                            .input('specs', sql.NVarChar, specs)
+                            .input('image', sql.NVarChar, image)
+                            .query(`INSERT INTO Products (ProductCode, ProductName, Category, Line, TechnicalSpecs, ImageData, CreatedAt) 
+                                    VALUES (@code, @name, @category, @line, @specs, @image, SYSDATETIMEOFFSET())`);
+                        inserted++;
+                    }
+                } catch (prodErr: any) {
+                    console.error(`Erro ao importar produto ${p.code || p.description}:`, prodErr);
+                    errors.push(`Erro no item ${p.code || p.description}: ${prodErr.message}`);
+                }
+            }
+
+            res.json({
+                success: true,
+                total: products.length,
+                inserted,
+                updated,
+                errors
+            });
+        } catch (err: any) {
+            console.error("Erro no batch import:", err);
+            res.status(500).json({ error: "Erro durante a importação em lote: " + err.message });
         }
     });
 

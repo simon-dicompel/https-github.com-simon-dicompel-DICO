@@ -57,20 +57,28 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, setUser, cartCou
             <div className="hidden md:flex items-center space-x-4">
               <button 
                 onClick={() => navigate('catalog')}
-                className={`px-3 py-2 rounded-md text-sm font-medium hover:text-blue-400 ${currentPage === 'catalog' ? 'text-blue-400' : ''}`}
+                className={`px-3 py-2 rounded-md text-sm font-medium transition-colors hover:text-blue-400 ${currentPage === 'catalog' ? 'text-blue-400 font-bold' : 'text-slate-200'}`}
               >
                 Catálogo
               </button>
 
               <button 
                 onClick={() => navigate('cart')}
-                className="relative p-2 rounded-full hover:bg-slate-800 transition-colors"
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+                  currentPage === 'cart' 
+                    ? 'bg-blue-600 text-white shadow-md shadow-blue-500/30' 
+                    : 'bg-slate-800 text-slate-200 hover:bg-slate-700 hover:text-white border border-slate-700'
+                }`}
+                title="Ver Carrinho e Orçamento"
               >
-                <ShoppingCart className="h-6 w-6" />
-                {cartCount > 0 && (
-                  <span className="absolute top-0 right-0 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white transform translate-x-1/4 -translate-y-1/4 bg-red-600 rounded-full">
+                <ShoppingCart className="h-5 w-5" />
+                <span>Carrinho</span>
+                {cartCount > 0 ? (
+                  <span className="inline-flex items-center justify-center px-2 py-0.5 text-xs font-black leading-none text-white bg-red-600 rounded-full animate-pulse">
                     {cartCount}
                   </span>
+                ) : (
+                  <span className="text-xs text-slate-400 font-normal">0</span>
                 )}
               </button>
 
@@ -131,12 +139,26 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, setUser, cartCou
 
         {/* Mobile Menu */}
         {isMenuOpen && (
-          <div className="md:hidden bg-slate-800 pb-4 px-4">
+          <div className="md:hidden bg-slate-800 pb-4 px-4 space-y-1">
              <button 
                 onClick={() => { navigate('catalog'); toggleMenu(); }}
-                className="block w-full text-left px-3 py-2 rounded-md text-base font-medium hover:bg-slate-700 hover:text-white"
+                className={`block w-full text-left px-3 py-2 rounded-md text-base font-medium hover:bg-slate-700 hover:text-white ${currentPage === 'catalog' ? 'text-blue-400 font-bold bg-slate-700/50' : 'text-slate-200'}`}
               >
-                Catálogo
+                Catálogo de Produtos
+              </button>
+             <button 
+                onClick={() => { navigate('cart'); toggleMenu(); }}
+                className={`flex items-center justify-between w-full text-left px-3 py-2 rounded-md text-base font-medium hover:bg-slate-700 hover:text-white ${currentPage === 'cart' ? 'text-blue-400 font-bold bg-slate-700/50' : 'text-slate-200'}`}
+              >
+                <span className="flex items-center gap-2">
+                  <ShoppingCart className="h-5 w-5" />
+                  Carrinho de Compras
+                </span>
+                {cartCount > 0 && (
+                  <span className="bg-red-600 text-white text-xs px-2.5 py-0.5 rounded-full font-black">
+                    {cartCount} {cartCount === 1 ? 'item' : 'itens'}
+                  </span>
+                )}
               </button>
               {user ? (
                 <>

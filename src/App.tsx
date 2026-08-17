@@ -83,12 +83,13 @@ const App: React.FC = () => {
   const clearCart = () => setCartItems([]);
 
   const renderPage = () => {
+    const totalCartCount = cartItems.reduce((acc, i) => acc + i.quantity, 0);
     switch(page) {
-      case 'catalog': return <Catalog addToCart={addToCart} />;
+      case 'catalog': return <Catalog addToCart={addToCart} cartCount={totalCartCount} navigate={setPage} />;
       case 'cart': return <Cart items={cartItems} updateQuantity={updateCartQuantity} removeItem={removeCartItem} navigate={setPage} clearCart={clearCart} />;
       case 'login': return <Login onLogin={(u) => { setUser(u); }} navigate={setPage} />;
       case 'dashboard': return user ? <Dashboard user={user} refreshTrigger={refreshTrigger} /> : <Login onLogin={(u) => { setUser(u); }} navigate={setPage} />;
-      default: return <Catalog addToCart={addToCart} />;
+      default: return <Catalog addToCart={addToCart} cartCount={totalCartCount} navigate={setPage} />;
     }
   };
 
