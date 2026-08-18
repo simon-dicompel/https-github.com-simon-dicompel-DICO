@@ -234,9 +234,11 @@ export const Cart: React.FC<CartProps> = ({ items, updateQuantity, removeItem, c
               <div className="flex-grow text-center sm:text-left">
                 <h4 className="font-bold text-slate-900 text-sm sm:text-base leading-snug">{item.description}</h4>
                 <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 mt-1.5">
-                  <span className="text-[10px] bg-slate-100 text-slate-600 font-black px-2 py-0.5 rounded border border-slate-200 uppercase">
-                    Ref: {item.reference}
-                  </span>
+                  {item.reference && (
+                    <span className="text-[10px] bg-slate-100 text-slate-600 font-mono font-bold px-2 py-0.5 rounded border border-slate-200">
+                      EAN: {item.reference}
+                    </span>
+                  )}
                   <span className="text-[10px] bg-slate-100 text-slate-600 font-bold px-2 py-0.5 rounded border border-slate-200 uppercase">
                     Cód: {item.code}
                   </span>

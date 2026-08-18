@@ -161,6 +161,41 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, refreshTrigger = 0 }
     return products.filter(p => (p.line || '').toLowerCase().trim() === line.toLowerCase().trim()).length;
   }, [products]);
 
+  const getOrderItemImage = useCallback((item: any) => {
+    if (item.imageUrl && typeof item.imageUrl === 'string' && item.imageUrl.trim().length > 5) {
+      return item.imageUrl;
+    }
+    const found = products.find(p => 
+      (p.id && item.id && p.id.toString() === item.id.toString()) ||
+      (p.code && item.code && p.code.toLowerCase().trim() === item.code.toLowerCase().trim()) ||
+      (p.reference && item.reference && p.reference.toLowerCase().trim() === item.reference.toLowerCase().trim()) ||
+      (p.description && item.description && p.description.toLowerCase().trim() === item.description.toLowerCase().trim())
+    );
+    return found?.imageUrl || '';
+  }, [products]);
+
+  const getOrderItemLine = useCallback((item: any) => {
+    if (item.line && typeof item.line === 'string' && item.line.trim().length > 0) {
+      return item.line;
+    }
+    const found = products.find(p => 
+      (p.id && item.id && p.id.toString() === item.id.toString()) ||
+      (p.code && item.code && p.code.toLowerCase().trim() === item.code.toLowerCase().trim())
+    );
+    return found?.line || 'Dicompel';
+  }, [products]);
+
+  const getOrderItemEan = useCallback((item: any) => {
+    if (item.reference && typeof item.reference === 'string' && item.reference.trim().length > 0) {
+      return item.reference;
+    }
+    const found = products.find(p => 
+      (p.id && item.id && p.id.toString() === item.id.toString()) ||
+      (p.code && item.code && p.code.toLowerCase().trim() === item.code.toLowerCase().trim())
+    );
+    return found?.reference || '';
+  }, [products]);
+
   const handleUpdateStatus = async (orderId: string, newStatus: OrderStatus) => {
     try {
       await orderService.updateStatus(orderId, newStatus);
@@ -931,27 +966,57 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, refreshTrigger = 0 }
                           <thead className="bg-slate-100 text-[9px] font-black uppercase text-slate-400">
                              <tr>
                                 <th className="px-4 py-3">Produto</th>
+                                <th className="px-4 py-3 text-center">Código EAN</th>
                                 <th className="px-4 py-3 text-center">Linha</th>
                                 <th className="px-4 py-3 text-center">Qtd</th>
                                 <th className="px-4 py-3 text-right">Ação</th>
                              </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
-                             {selectedOrder.items?.map((item, idx) => (
-                                <tr key={idx} className="bg-white">
+                             {selectedOrder.items?.map((item, idx) => {
+                                const itemImg = getOrderItemImage(item);
+                                const itemLine = getOrderItemLine(item);
+                                const itemEan = getOrderItemEan(item);
+
+                                return (
+                                <tr key={idx} className="bg-white hover:bg-slate-50/50 transition-colors">
                                    <td className="px-4 py-3 flex items-center gap-3">
-                                      <img src={item.imageUrl} className="w-8 h-8 object-contain rounded border p-0.5" alt=""/>
+                                      <div className="w-10 h-10 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-center overflow-hidden flex-shrink-0">
+                                         {itemImg ? (
+                                            <img 
+                                              src={itemImg} 
+                                              className="w-full h-full object-contain p-1" 
+                                              alt={item.description || item.code}
+                                              onError={(e) => {
+                                                // Fallback if image fails to load
+                                                (e.target as HTMLElement).style.display = 'none';
+                                              }}
+                                            />
+                                         ) : (
+                                            <ImageIcon className="w-5 h-5 text-slate-300" />
+                                         )}
+                                      </div>
                                       <div>
-                                         <p className="text-xs font-bold text-slate-900">{item.description}</p>
-                                         <p className="text-[9px] text-slate-400 font-bold uppercase">{item.code}</p>
+                                         <p className="text-xs font-bold text-slate-900 leading-tight">{item.description}</p>
+                                         <p className="text-[9px] text-slate-400 font-mono font-bold uppercase mt-0.5">{item.code}</p>
                                       </div>
                                    </td>
-                                   <td className="px-4 py-3 text-center"><span className="text-[9px] font-black text-blue-600 uppercase">{item.line}</span></td>
+                                   <td className="px-4 py-3 text-center">
+                                      <span className="text-[10px] font-mono text-slate-500 font-medium">
+                                         {itemEan || '-'}
+                                      </span>
+                                   </td>
+                                   <td className="px-4 py-3 text-center">
+                                      <span className="text-[9px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded uppercase">
+                                         {itemLine}
+                                      </span>
+                                   </td>
                                    <td className="px-4 py-3 text-center">
                                       {isEditingOrder ? (
                                          <input 
                                            type="number" 
-                                           className="w-16 text-center border rounded font-black text-xs p-1" 
+                                           min="1"
+                                           className="w-16 text-center border border-slate-300 rounded-lg font-black text-xs p-1 focus:ring-2 focus:ring-blue-500 focus:outline-none" 
                                            value={item.quantity} 
                                            onChange={e => {
                                               const n = parseInt(e.target.value) || 1;
@@ -961,20 +1026,23 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, refreshTrigger = 0 }
                                            }}
                                          />
                                       ) : (
-                                         <span className="font-black text-slate-900">{item.quantity}</span>
+                                         <span className="font-black text-slate-900 text-xs px-2 py-1 bg-slate-100 rounded-md">{item.quantity}</span>
                                       )}
                                    </td>
                                    <td className="px-4 py-3 text-right">
-                                      {isEditingOrder && (
+                                      {isEditingOrder ? (
                                          <button onClick={() => {
                                            const newItems = [...selectedOrder.items];
                                            newItems.splice(idx, 1);
                                            setSelectedOrder({...selectedOrder, items: newItems});
-                                         }} className="p-1.5 text-slate-300 hover:text-red-600 transition-colors"><Trash2 className="h-4 w-4"/></button>
+                                         }} className="p-1.5 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Remover item"><Trash2 className="h-4 w-4"/></button>
+                                      ) : (
+                                         <span className="text-slate-300 text-xs">-</span>
                                       )}
                                    </td>
                                 </tr>
-                             ))}
+                             );
+                             })}
                           </tbody>
                        </table>
                     </div>

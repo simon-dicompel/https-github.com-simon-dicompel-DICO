@@ -704,15 +704,46 @@ app.get("/api/db-check", async (req, res) => {
                 continue;
             }
 
-            const itemsRes = await currentPool.request()
-                .input('orderId', sql.Int, orderId)
-                .query('SELECT ProductID as id, ProductCode as code, ProductName as pName, Quantity as quantity FROM OrderItems WHERE OrderID = @orderId');
+            let itemsRes;
+            try {
+                itemsRes = await currentPool.request()
+                    .input('orderId', sql.Int, orderId)
+                    .query(`
+                        SELECT 
+                            oi.ProductID as id, 
+                            oi.ProductCode as code, 
+                            oi.ProductName as pName, 
+                            oi.Quantity as quantity,
+                            p.ImageData as ImageData,
+                            p.Line as Line,
+                            p.Category as Category,
+                            p.TechnicalSpecs as TechnicalSpecs
+                        FROM OrderItems oi
+                        LEFT JOIN Products p ON (oi.ProductID = p.ProductID OR (oi.ProductCode IS NOT NULL AND oi.ProductCode != '' AND oi.ProductCode = p.ProductCode))
+                        WHERE oi.OrderID = @orderId
+                    `);
+            } catch (queryErr) {
+                console.warn(">> [API] Failed JOIN query for OrderItems, falling back to simple query:", queryErr);
+                itemsRes = await currentPool.request()
+                    .input('orderId', sql.Int, orderId)
+                    .query('SELECT ProductID as id, ProductCode as code, ProductName as pName, Quantity as quantity FROM OrderItems WHERE OrderID = @orderId');
+            }
             
-            order.items = itemsRes.recordset.map((it: any) => ({
-                ...it,
-                id: (it.id ?? it.ProductID ?? it.productid ?? '0').toString(),
-                description: it.pName || it.ProductName || it.productname
-            }));
+            order.items = itemsRes.recordset.map((it: any) => {
+                const mapped = mapProduct({
+                    ProductID: it.id,
+                    ProductCode: it.code,
+                    ProductName: it.pName,
+                    ImageData: it.ImageData,
+                    Line: it.Line,
+                    Category: it.Category,
+                    TechnicalSpecs: it.TechnicalSpecs
+                });
+                return {
+                    ...mapped,
+                    quantity: it.quantity || 1
+                };
+            });
             
             order.id = orderId.toString();
             order.createdAt = order.CreatedAt || order.createdat || order.date;
