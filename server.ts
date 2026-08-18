@@ -133,22 +133,97 @@ app.get("/api/db-check", async (req, res) => {
 
 // --- HELPER MAPPERS ---
     
+    const serializeProductSpecs = (p: { details?: string; reference?: string; colors?: string[]; amperage?: string; subcategory?: string }) => {
+        const rawDetails = (p.details || '').trim();
+        const reference = (p.reference || '').trim();
+        const colors = Array.isArray(p.colors) ? p.colors.map((c: any) => String(c).trim()).filter(Boolean) : [];
+        const amperage = (p.amperage || '').trim();
+        const subcategory = (p.subcategory || '').trim();
+
+        if (reference || colors.length > 0 || amperage || subcategory) {
+            return JSON.stringify({
+                details: rawDetails,
+                reference,
+                colors,
+                amperage,
+                subcategory
+            });
+        }
+        return rawDetails;
+    };
+
     const mapProduct = (p: any) => {
         const id = (p.ProductID || p.productid || p.id || p.Id || '0').toString();
-        const product = {
+        const code = (p.ProductCode || p.productcode || p.codigo || p.Codigo || '').toString();
+        const desc = (p.ProductName || p.productname || p.nome || p.Nome || p.description || '').toString();
+        
+        let details = (p.TechnicalSpecs || p.technicalspecs || p.details || '').toString();
+        let reference = (p.Reference || p.reference || p.EAN || p.ean || p.CodigoEAN || p.codigoean || '').toString();
+        let colors: string[] = [];
+        let amperage = (p.Amperage || p.amperage || p.tensao || '').toString();
+        let subcategory = (p.Subcategory || p.subcategory || '').toString();
+
+        // Check direct Colors column if present in table
+        if (p.Colors || p.colors) {
+            const cVal = p.Colors || p.colors;
+            if (Array.isArray(cVal)) {
+                colors = cVal.map(String).map(s => s.trim()).filter(Boolean);
+            } else if (typeof cVal === 'string') {
+                try {
+                    const parsed = JSON.parse(cVal);
+                    if (Array.isArray(parsed)) colors = parsed.map(String).map(s => s.trim()).filter(Boolean);
+                    else colors = cVal.split(/[,;\/]/).map(s => s.trim()).filter(Boolean);
+                } catch {
+                    colors = cVal.split(/[,;\/]/).map(s => s.trim()).filter(Boolean);
+                }
+            }
+        }
+
+        // Check if TechnicalSpecs is JSON with bundled metadata
+        if (details && typeof details === 'string' && details.trim().startsWith('{') && details.trim().endsWith('}')) {
+            try {
+                const meta = JSON.parse(details);
+                if (meta && typeof meta === 'object') {
+                    if (meta.details !== undefined) details = meta.details || '';
+                    if (!reference && meta.reference) reference = meta.reference;
+                    if (!reference && meta.ean) reference = meta.ean;
+                    if (colors.length === 0 && Array.isArray(meta.colors)) {
+                        colors = meta.colors.map(String).map(s => s.trim()).filter(Boolean);
+                    }
+                    if (!amperage && meta.amperage) amperage = meta.amperage;
+                    if (!subcategory && meta.subcategory) subcategory = meta.subcategory;
+                }
+            } catch {
+                // keep raw details
+            }
+        }
+
+        // Default reference to code if still empty
+        if (!reference) {
+            reference = code;
+        }
+
+        // Auto-detect amperage from description if still empty
+        if (!amperage && desc) {
+            const ampMatch = desc.match(/\b(10A|20A|10\/20A|10 A|20 A|16A|25A|32A|Bivolt|127V|220V|250V)\b/i);
+            if (ampMatch) {
+                amperage = ampMatch[1].toUpperCase().replace(/\s+/g, '');
+            }
+        }
+
+        return {
             id,
-            code: p.ProductCode || p.productcode || p.codigo || p.Codigo,
-            description: p.ProductName || p.productname || p.nome || p.Nome || p.description,
-            reference: p.ProductCode || p.productcode || p.codigo,
-            colors: [],
-            imageUrl: p.ImageData || p.imagedata || p.image || '',
-            category: p.Category || p.category || p.tipo || 'Geral',
-            subcategory: '',
-            line: p.Line || p.line || '',
-            details: p.TechnicalSpecs || p.technicalspecs || '',
-            amperage: ''
+            code,
+            description: desc,
+            reference,
+            colors,
+            imageUrl: (p.ImageData || p.imagedata || p.image || '').toString(),
+            category: (p.Category || p.category || p.tipo || 'Geral').toString(),
+            subcategory,
+            line: (p.Line || p.line || '').toString(),
+            details,
+            amperage
         };
-        return product;
     };
 
     const mapUser = (u: any) => {
@@ -258,13 +333,14 @@ app.get("/api/db-check", async (req, res) => {
     app.post("/api/products", async (req, res) => {
         try {
             const currentPool = await getPool();
-            const { code, description, category, line, details, imageUrl } = req.body;
+            const { code, description, category, line, details, imageUrl, reference, colors, amperage, subcategory } = req.body;
+            const specs = serializeProductSpecs({ details, reference, colors, amperage, subcategory });
             const result = await currentPool.request()
                 .input('code', sql.NVarChar, code)
                 .input('name', sql.NVarChar, description)
                 .input('category', sql.NVarChar, category)
                 .input('line', sql.NVarChar, line)
-                .input('specs', sql.NVarChar, details)
+                .input('specs', sql.NVarChar, specs)
                 .input('image', sql.NVarChar, imageUrl)
                 .query(`INSERT INTO Products (ProductCode, ProductName, Category, Line, TechnicalSpecs, ImageData, CreatedAt) 
                         OUTPUT INSERTED.* 
@@ -293,7 +369,13 @@ app.get("/api/db-check", async (req, res) => {
                     const name = (p.description || p.name || '').trim();
                     const category = (p.category || 'Geral').trim();
                     const line = (p.line || '').trim();
-                    const specs = (p.details || '').trim();
+                    const specs = serializeProductSpecs({
+                        details: p.details,
+                        reference: p.reference,
+                        colors: p.colors,
+                        amperage: p.amperage,
+                        subcategory: p.subcategory
+                    });
                     const image = (p.imageUrl || '').trim();
 
                     if (!code && !name) {
@@ -362,8 +444,9 @@ app.get("/api/db-check", async (req, res) => {
     app.put("/api/products/:id", async (req, res) => {
         try {
             const currentPool = await getPool();
-            const { code, description, category, line, details, imageUrl } = req.body;
+            const { code, description, category, line, details, imageUrl, reference, colors, amperage, subcategory } = req.body;
             const productId = req.params.id; // Mantendo como string para UniqueIdentifier
+            const specs = serializeProductSpecs({ details, reference, colors, amperage, subcategory });
 
             const result = await currentPool.request()
                 .input('id', sql.UniqueIdentifier, productId)
@@ -371,7 +454,7 @@ app.get("/api/db-check", async (req, res) => {
                 .input('name', sql.NVarChar, description)
                 .input('category', sql.NVarChar, category)
                 .input('line', sql.NVarChar, line)
-                .input('specs', sql.NVarChar, details)
+                .input('specs', sql.NVarChar, specs)
                 .input('image', sql.NVarChar, imageUrl)
                 .query(`UPDATE Products 
                         SET ProductCode = @code, ProductName = @name, Category = @category, Line = @line, 

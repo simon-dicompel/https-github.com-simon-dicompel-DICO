@@ -344,7 +344,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, refreshTrigger = 0 }
       return;
     }
 
-    const headers = ['ID', 'Código', 'Descrição', 'Referência', 'Linha', 'Categoria', 'Subcategoria', 'Amperagem', 'Cores'];
+    const headers = ['ID', 'Código', 'Descrição', 'Código EAN', 'Linha', 'Categoria', 'Subcategoria', 'Amperagem', 'Cores'];
     const rows = productsToExport.map(p => [
       p.id,
       p.code,
@@ -428,7 +428,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, refreshTrigger = 0 }
                   <div className="flex flex-col md:flex-row justify-between items-center gap-4">
                     <div className="relative w-full md:w-80">
                       <Search className="absolute inset-y-0 left-3 h-4 w-4 text-slate-400 my-auto" />
-                      <input type="text" placeholder="Código, descrição ou referência..." className="pl-9 pr-4 py-2 border rounded-xl text-xs w-full bg-white shadow-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all" value={productSearch} onChange={(e) => { setProductSearch(e.target.value); setSelectedProductIds([]); }} />
+                      <input type="text" placeholder="Código, descrição ou Código EAN..." className="pl-9 pr-4 py-2 border rounded-xl text-xs w-full bg-white shadow-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all" value={productSearch} onChange={(e) => { setProductSearch(e.target.value); setSelectedProductIds([]); }} />
                     </div>
                     <div className="flex flex-wrap gap-2 w-full md:w-auto">
                       <Button variant="outline" size="sm" className="flex-1 md:flex-none font-black uppercase text-[10px] h-10 gap-2 border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100" onClick={() => setShowImportModal(true)}>
@@ -494,7 +494,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, refreshTrigger = 0 }
                           </button>
                         </th>
                         <th className="px-6 py-4">Produto</th>
-                        <th className="px-6 py-4">Referência</th>
+                        <th className="px-6 py-4">Código EAN</th>
                         <th className="px-6 py-4">Linha</th>
                         <th className="px-6 py-4">Categoria</th>
                         <th className="px-6 py-4 text-right">Ações</th>
@@ -1089,8 +1089,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, refreshTrigger = 0 }
                 </div>
 
                 <div>
-                  <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest">Referência de Fábrica</label>
-                  <input required type="text" className={darkInput} value={editingProduct.reference || ''} onChange={e => setEditingProduct({...editingProduct, reference: e.target.value})} />
+                  <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest">Código EAN</label>
+                  <input type="text" className={darkInput} value={editingProduct.reference || ''} onChange={e => setEditingProduct({...editingProduct, reference: e.target.value})} placeholder="Ex: 7891234567890" />
                 </div>
 
                 <div className="md:col-span-2">

@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Product } from '../types';
 import { productService } from '../services/api';
-import { Search, Info, Check, Plus, Camera, Sparkles, AlertCircle, X, Filter, ChevronDown, Layers, Image as ImageIcon, Box, ArrowLeft, Settings2, HelpCircle, ShoppingBag, MessageCircle, UserCheck, ShoppingCart, ArrowRight, FileSpreadsheet } from 'lucide-react';
+import { Search, Info, Check, Plus, Camera, Sparkles, AlertCircle, X, Filter, ChevronDown, Layers, Image as ImageIcon, Box, ArrowLeft, Settings2, HelpCircle, ShoppingBag, MessageCircle, UserCheck, ShoppingCart, ArrowRight } from 'lucide-react';
 import { Button } from '../components/Button';
-import { ProductImportModal } from '../components/ProductImportModal';
 import { GoogleGenAI, Type } from "@google/genai";
 
 interface CatalogProps {
@@ -53,7 +52,6 @@ export const Catalog: React.FC<CatalogProps> = ({ addToCart, cartCount = 0, navi
   const [aiSearchResult, setAiSearchResult] = useState<AISearchResult | null>(null);
   
   const [showHowToBuy, setShowHowToBuy] = useState(false);
-  const [showImportModal, setShowImportModal] = useState(false);
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -295,9 +293,6 @@ export const Catalog: React.FC<CatalogProps> = ({ addToCart, cartCount = 0, navi
             <p className="text-slate-600 text-sm">Catálogo e Configurador de Kits.</p>
           </div>
           <div className="flex flex-wrap gap-2 w-full md:w-auto">
-            <Button variant="outline" size="sm" className="flex-1 md:flex-none bg-white font-black uppercase tracking-widest text-[10px] h-11 px-5 border-emerald-300 text-emerald-700 hover:bg-emerald-50 shadow-sm" onClick={() => setShowImportModal(true)}>
-              <FileSpreadsheet className="h-4 w-4 mr-2 text-emerald-600" /> Importar Excel
-            </Button>
             <Button variant="outline" size="sm" className="flex-1 md:flex-none bg-white font-black uppercase tracking-widest text-[10px] h-11 px-6 border-slate-200" onClick={() => setShowHowToBuy(true)}>
               <HelpCircle className="h-4 w-4 mr-2" /> Como Comprar
             </Button>
@@ -472,8 +467,8 @@ export const Catalog: React.FC<CatalogProps> = ({ addToCart, cartCount = 0, navi
                        <span className="text-xs font-bold text-slate-900">{selectedProductForInfo.code}</span>
                     </div>
                     <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
-                       <span className="text-[9px] font-black text-slate-400 block mb-1 uppercase tracking-widest">REFERÊNCIA:</span>
-                       <span className="text-xs font-bold text-slate-900">{selectedProductForInfo.reference}</span>
+                       <span className="text-[9px] font-black text-slate-400 block mb-1 uppercase tracking-widest">CÓDIGO EAN:</span>
+                       <span className="text-xs font-bold text-slate-900">{selectedProductForInfo.reference || '-'}</span>
                     </div>
                  </div>
                  {selectedProductForInfo.colors && selectedProductForInfo.colors.length > 0 && (
@@ -664,14 +659,6 @@ export const Catalog: React.FC<CatalogProps> = ({ addToCart, cartCount = 0, navi
           </div>
         </div>
       )}
-
-      {/* Modal de Importação Excel e Fotos */}
-      <ProductImportModal
-        isOpen={showImportModal}
-        onClose={() => setShowImportModal(false)}
-        onSuccess={loadProducts}
-        existingProducts={products}
-      />
     </div>
   );
 };

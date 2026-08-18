@@ -71,7 +71,7 @@ export const ProductImportModal: React.FC<ProductImportModalProps> = ({
   const sampleTemplateData = [
     {
       'Código': 'DIC-1001',
-      'Referência': '1001-BR',
+      'Código EAN': '7898523691011',
       'Descrição / Nome': 'Tomada 2P+T 10A 250V Branca',
       'Linha': 'Novara',
       'Categoria': 'Tomadas',
@@ -83,7 +83,7 @@ export const ProductImportModal: React.FC<ProductImportModalProps> = ({
     },
     {
       'Código': 'DIC-1002',
-      'Referência': '1002-PR',
+      'Código EAN': '7898523691028',
       'Descrição / Nome': 'Interruptor Simples 10A 250V Preto',
       'Linha': 'Novara',
       'Categoria': 'Interruptores',
@@ -95,7 +95,7 @@ export const ProductImportModal: React.FC<ProductImportModalProps> = ({
     },
     {
       'Código': 'DIC-2001',
-      'Referência': '2001-GRAF',
+      'Código EAN': '7898523692018',
       'Descrição / Nome': 'Placa 4x2 com Suporte 3 Postos Grafite',
       'Linha': 'Classic',
       'Categoria': 'Placas',
@@ -115,7 +115,7 @@ export const ProductImportModal: React.FC<ProductImportModalProps> = ({
       // Ajuste de largura das colunas
       ws['!cols'] = [
         { wch: 15 }, // Código
-        { wch: 15 }, // Referência
+        { wch: 18 }, // Código EAN
         { wch: 35 }, // Descrição
         { wch: 18 }, // Linha
         { wch: 18 }, // Categoria
@@ -138,10 +138,10 @@ export const ProductImportModal: React.FC<ProductImportModalProps> = ({
 
   // Baixar Modelo em formato CSV
   const handleDownloadCSVTemplate = () => {
-    const headers = ['Código', 'Referência', 'Descrição / Nome', 'Linha', 'Categoria', 'Subcategoria', 'Cores', 'Amperagem', 'Especificações Técnicas', 'URL da Imagem / Foto'];
+    const headers = ['Código', 'Código EAN', 'Descrição / Nome', 'Linha', 'Categoria', 'Subcategoria', 'Cores', 'Amperagem', 'Especificações Técnicas', 'URL da Imagem / Foto'];
     const rows = sampleTemplateData.map(item => [
       `"${item['Código']}"`,
-      `"${item['Referência']}"`,
+      `"${item['Código EAN']}"`,
       `"${item['Descrição / Nome']}"`,
       `"${item['Linha']}"`,
       `"${item['Categoria']}"`,
@@ -202,39 +202,132 @@ export const ProductImportModal: React.FC<ProductImportModalProps> = ({
 
         for (const [key, val] of Object.entries(row)) {
           const norm = normalizeKey(key);
-          const strVal = String(val).trim();
+          const strVal = String(val !== undefined && val !== null ? val : '').trim();
+          if (!strVal) continue;
 
-          if (norm.includes('codigo') || norm === 'cod' || norm === 'code' || norm === 'id') {
-            code = strVal;
-          } else if (norm.includes('referencia') || norm === 'ref') {
+          // 1. Código EAN / Código de Barras / Referência (checar primeiro para não conflitar com "codigo")
+          if (
+            norm.includes('ean') ||
+            norm.includes('gtin') ||
+            norm.includes('barra') ||
+            norm.includes('referencia') ||
+            norm === 'ref' ||
+            norm === 'refabrica'
+          ) {
             reference = strVal;
-          } else if (norm.includes('descricao') || norm.includes('nome') || norm === 'name' || norm === 'produto') {
+          }
+          // 2. Código do Produto / Código Interno
+          else if (
+            norm === 'codigo' ||
+            norm === 'cod' ||
+            norm === 'code' ||
+            norm === 'id' ||
+            norm.includes('codigointerno') ||
+            norm.includes('codigoproduto') ||
+            norm.includes('codprod') ||
+            norm.includes('coditem') ||
+            (norm.includes('codigo') && !norm.includes('ean') && !norm.includes('barra'))
+          ) {
+            code = strVal;
+          }
+          // 3. Descrição / Nome
+          else if (
+            norm.includes('descricao') ||
+            norm.includes('nome') ||
+            norm === 'name' ||
+            norm === 'produto' ||
+            norm === 'item' ||
+            norm.includes('desc')
+          ) {
             description = strVal;
-          } else if (norm === 'linha' || norm === 'line' || norm.includes('colecao')) {
+          }
+          // 4. Linha / Coleção
+          else if (
+            norm === 'linha' ||
+            norm === 'line' ||
+            norm.includes('colecao') ||
+            norm.includes('familia')
+          ) {
             line = strVal;
-          } else if (norm === 'categoria' || norm === 'category' || norm === 'tipo') {
+          }
+          // 5. Categoria
+          else if (
+            norm === 'categoria' ||
+            norm === 'category' ||
+            norm === 'tipo' ||
+            norm.includes('grupo')
+          ) {
             category = strVal;
-          } else if (norm.includes('subcategoria') || norm === 'subcategory') {
+          }
+          // 6. Subcategoria
+          else if (
+            norm.includes('subcategoria') ||
+            norm.includes('subcategory') ||
+            norm.includes('subgrupo')
+          ) {
             subcategory = strVal;
-          } else if (norm.includes('cor') || norm === 'color' || norm === 'colors') {
+          }
+          // 7. Cores / Acabamentos
+          else if (
+            norm.includes('cor') ||
+            norm.includes('color') ||
+            norm.includes('acabamento') ||
+            norm.includes('tonalidade') ||
+            norm.includes('pintura')
+          ) {
             colorsStr = strVal;
-          } else if (norm.includes('amperagem') || norm.includes('tensao') || norm.includes('voltagem') || norm === 'amperage') {
+          }
+          // 8. Amperagem / Tensão / Voltagem / Corrente
+          else if (
+            norm.includes('amper') ||
+            norm.includes('amp') ||
+            norm.includes('tensao') ||
+            norm.includes('voltag') ||
+            norm.includes('corrente') ||
+            norm.includes('volts') ||
+            norm.includes('bivolt')
+          ) {
             amperage = strVal;
-          } else if (norm.includes('especificac') || norm.includes('detalhe') || norm.includes('specs') || norm.includes('descricao_tecnica')) {
+          }
+          // 9. Especificações Técnicas / Detalhes
+          else if (
+            norm.includes('especificac') ||
+            norm.includes('detalhe') ||
+            norm.includes('specs') ||
+            norm.includes('tecnica') ||
+            norm.includes('observac')
+          ) {
             details = strVal;
-          } else if (norm.includes('foto') || norm.includes('imagem') || norm.includes('image') || norm.includes('url') || norm.includes('link')) {
+          }
+          // 10. Foto / Imagem
+          else if (
+            norm.includes('foto') ||
+            norm.includes('imagem') ||
+            norm.includes('image') ||
+            norm.includes('url') ||
+            norm.includes('link') ||
+            norm.includes('img')
+          ) {
             imageUrl = strVal;
           }
         }
 
-        // Se não achou código explícito, tenta usar a referência
+        // Se não achou código explícito, tenta usar a referência/EAN
         if (!code && reference) code = reference;
         if (!reference && code) reference = code;
 
-        // Tratar array de cores
+        // Tratar array de cores (aceita vírgula, ponto e vírgula, barra, hífen, pipe)
         const colors = colorsStr 
-          ? colorsStr.split(/[,;\/]/).map(c => c.trim()).filter(Boolean)
+          ? colorsStr.split(/[,;\/\|\n\r\t]+/).map(c => c.trim()).filter(Boolean)
           : [];
+
+        // Auto-detectar amperagem da descrição se o campo veio vazio
+        if (!amperage && description) {
+          const ampMatch = description.match(/\b(10A|20A|10\/20A|10 A|20 A|16A|25A|32A|Bivolt|127V|220V|250V)\b/i);
+          if (ampMatch) {
+            amperage = ampMatch[1].toUpperCase().replace(/\s+/g, '');
+          }
+        }
 
         // Validar e verificar se já existe
         const isExisting = existingProducts.some(p => 
@@ -437,8 +530,8 @@ export const ProductImportModal: React.FC<ProductImportModalProps> = ({
                 <thead className="bg-slate-800/80 text-slate-300 uppercase font-black">
                   <tr>
                     <th className="p-2.5">Código *</th>
+                    <th className="p-2.5">Código EAN</th>
                     <th className="p-2.5">Descrição / Nome *</th>
-                    <th className="p-2.5">Referência</th>
                     <th className="p-2.5">Linha *</th>
                     <th className="p-2.5">Categoria *</th>
                     <th className="p-2.5">Subcategoria</th>
@@ -450,8 +543,8 @@ export const ProductImportModal: React.FC<ProductImportModalProps> = ({
                 <tbody className="divide-y divide-slate-800 text-slate-400">
                   <tr>
                     <td className="p-2.5 font-mono text-emerald-400 font-bold">DIC-1001</td>
+                    <td className="p-2.5 font-mono text-slate-300">7898523691011</td>
                     <td className="p-2.5 text-white font-medium">Tomada 2P+T 10A Branca</td>
-                    <td className="p-2.5 font-mono">1001-BR</td>
                     <td className="p-2.5 text-blue-400 font-bold">Novara</td>
                     <td className="p-2.5 text-purple-400 font-bold">Tomadas</td>
                     <td className="p-2.5">Módulos</td>
@@ -461,8 +554,8 @@ export const ProductImportModal: React.FC<ProductImportModalProps> = ({
                   </tr>
                   <tr>
                     <td className="p-2.5 font-mono text-emerald-400 font-bold">DIC-1002</td>
+                    <td className="p-2.5 font-mono text-slate-300">7898523691028</td>
                     <td className="p-2.5 text-white font-medium">Interruptor Simples Preto</td>
-                    <td className="p-2.5 font-mono">1002-PR</td>
                     <td className="p-2.5 text-blue-400 font-bold">Novara</td>
                     <td className="p-2.5 text-purple-400 font-bold">Interruptores</td>
                     <td className="p-2.5">Módulos</td>
@@ -794,9 +887,11 @@ export const ProductImportModal: React.FC<ProductImportModalProps> = ({
                     <tr>
                       <th className="p-3 w-12 text-center">Foto</th>
                       <th className="p-3">Código</th>
+                      <th className="p-3">Código EAN</th>
                       <th className="p-3">Descrição</th>
                       <th className="p-3">Linha</th>
                       <th className="p-3">Categoria</th>
+                      <th className="p-3">Amperagem</th>
                       <th className="p-3">Cores</th>
                       <th className="p-3">Status</th>
                     </tr>
@@ -814,6 +909,7 @@ export const ProductImportModal: React.FC<ProductImportModalProps> = ({
                           </div>
                         </td>
                         <td className="p-3 font-mono font-bold text-emerald-400">{row.code}</td>
+                        <td className="p-3 font-mono text-[11px] text-slate-400">{row.reference || '-'}</td>
                         <td className="p-3 font-medium text-white max-w-[200px] truncate">{row.description}</td>
                         <td className="p-3">
                           <span className="px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 font-bold text-[10px]">
@@ -825,8 +921,21 @@ export const ProductImportModal: React.FC<ProductImportModalProps> = ({
                             {row.category}
                           </span>
                         </td>
+                        <td className="p-3">
+                          {row.amperage ? (
+                            <span className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 font-bold text-[10px]">
+                              {row.amperage}
+                            </span>
+                          ) : (
+                            <span className="text-slate-600 text-[11px]">-</span>
+                          )}
+                        </td>
                         <td className="p-3 max-w-[150px] truncate text-[11px] text-slate-400">
-                          {row.colors.length > 0 ? row.colors.join(', ') : '-'}
+                          {row.colors.length > 0 ? (
+                            <span className="text-emerald-300 font-medium">{row.colors.join(', ')}</span>
+                          ) : (
+                            <span className="text-slate-600">-</span>
+                          )}
                         </td>
                         <td className="p-3">
                           {row.isExisting ? (
