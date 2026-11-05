@@ -2,6 +2,7 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
+import fs from "fs";
 import { fileURLToPath } from "url";
 import sql from 'mssql';
 import dotenv from 'dotenv';
@@ -89,6 +90,17 @@ const getPool = async () => {
         dbError = err.message;
         if (err.code === 'ETIMEOUT') {
             dbError = "CONNECTION TIMEOUT: Provável bloqueio de Firewall no Azure SQL. Certifique-se de permitir 'Serviços do Azure' no painel do banco de dados.";
+        } else if (err.message && err.message.includes('is not allowed to access the server')) {
+            console.error('\n=============================================================');
+            console.error('>> [FIREWALL AZURE SQL BLOQUEADO]');
+            console.error(err.message);
+            console.error('>> AÇÃO NECESSÁRIA NO PORTAL DO AZURE:');
+            console.error('   1. Acesse o portal Azure (portal.azure.com)');
+            console.error('   2. Vá em Servidores SQL (SQL servers) > "configurador-produto-sql"');
+            console.error('   3. No menu esquerdo, vá em "Segurança" > "Rede" (Networking)');
+            console.error('   4. Em Exceções, marque: "Permitir que serviços e recursos do Azure acessem este servidor"');
+            console.error('   5. Adicione também as regras de Firewall para o IP do cliente se desejar acesso externo.');
+            console.error('=============================================================\n');
         }
         console.error('>> ERRO AO CONECTAR AO BANCO:', dbError);
         pool = null;
@@ -313,7 +325,10 @@ app.get("/api/db-check", async (req, res) => {
             let result;
             try {
                 result = await executeQuery('SELECT * FROM Products ORDER BY ProductName');
-            } catch (sortErr) {
+            } catch (sortErr: any) {
+                if (sortErr?.message?.includes('is not allowed to access the server') || sortErr?.code === 'ETIMEOUT') {
+                    throw sortErr;
+                }
                 console.warn(">> [API] Falha ao ordenar por ProductName, tentando sem ordenação", sortErr);
                 result = await executeQuery('SELECT * FROM Products');
             }
@@ -965,26 +980,29 @@ app.get("/api/db-check", async (req, res) => {
 
 
 async function setupVite() {
-    // --- VITE MIDDLEWARE ---
     if (process.env.NODE_ENV !== "production") {
+        console.log(">> [SERVER] Rodando em modo desenvolvimento com Vite middleware.");
         const vite = await createViteServer({
-            server: { middlewareMode: true },
+            server: { 
+                middlewareMode: true
+            },
             appType: "spa",
         });
         app.use(vite.middlewares);
     } else {
         const distPath = path.join(process.cwd(), 'dist');
+        console.log(`>> [SERVER] Rodando em modo de produção servindo build estático de '${distPath}'.`);
         app.use(express.static(distPath));
-        app.get('*', (req, res) => {
+        app.use((req, res) => {
             res.sendFile(path.join(distPath, 'index.html'));
         });
     }
 
     // No Vercel, o servidor é gerenciado pela plataforma.
-    // Só iniciamos o listen se não estivermos no ambiente Vercel/Produção
+    // Só iniciamos o listen se não estivermos no ambiente Vercel
     if (!process.env.VERCEL) {
         app.listen(PORT, "0.0.0.0", () => {
-            console.log(`Servidor rodando em porta ${PORT} (Env: ${process.env.NODE_ENV})`);
+            console.log(`Servidor rodando em porta ${PORT} (Env: ${process.env.NODE_ENV || 'development'})`);
         });
     }
 }
