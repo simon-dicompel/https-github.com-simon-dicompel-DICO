@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Product } from '../types';
 import { productService } from '../services/api';
-import { Search, Info, Check, Plus, Camera, Sparkles, AlertCircle, X, Filter, ChevronDown, Layers, Image as ImageIcon, Box, ArrowLeft, Settings2, HelpCircle, ShoppingBag, MessageCircle, UserCheck, ShoppingCart, ArrowRight } from 'lucide-react';
+import { Search, Info, Check, Plus, Camera, Sparkles, AlertCircle, AlertTriangle, X, Filter, ChevronDown, Layers, Image as ImageIcon, Box, ArrowLeft, Settings2, HelpCircle, ShoppingBag, MessageCircle, UserCheck, ShoppingCart, ArrowRight, RefreshCw, Database } from 'lucide-react';
 import { Button } from '../components/Button';
 import { GoogleGenAI, Type } from "@google/genai";
 
@@ -31,6 +31,8 @@ export const Catalog: React.FC<CatalogProps> = ({ addToCart, cartCount = 0, navi
   const [addedIds, setAddedIds] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<'general' | 'novara'>('general');
   const [visibleCount, setVisibleCount] = useState(24);
+  const [dbErrorMsg, setDbErrorMsg] = useState<string | null>(null);
+  const [isOfflineMode, setIsOfflineMode] = useState(false);
 
   // Filtros Geral
   const [searchTerm, setSearchTerm] = useState('');
@@ -80,11 +82,20 @@ export const Catalog: React.FC<CatalogProps> = ({ addToCart, cartCount = 0, navi
   const loadProducts = async () => {
     try {
       setLoading(true);
+      setDbErrorMsg(null);
+      setIsOfflineMode(false);
       const data = await productService.getAll();
       setProducts(data || []);
     } catch (e: any) {
       console.error("Erro ao carregar catálogo:", e);
-      alert(`Erro ao carregar produtos: ${e.message}. Verifique a conexão com o banco de dados.`);
+      const cached = productService.getCached();
+      if (cached && cached.length > 0) {
+        setProducts(cached);
+        setIsOfflineMode(true);
+        setDbErrorMsg(`Aviso: Exibindo catálogo em cache local (${cached.length} produtos). Não foi possível sincronizar com o banco: ${e.message}`);
+      } else {
+        setDbErrorMsg(e.message || "Falha ao buscar produtos no banco de dados.");
+      }
     } finally {
       setLoading(false);
     }
@@ -302,6 +313,39 @@ export const Catalog: React.FC<CatalogProps> = ({ addToCart, cartCount = 0, navi
           </div>
         </div>
 
+        {dbErrorMsg && (
+          <div className={`p-4 rounded-2xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 ${
+            isOfflineMode 
+              ? 'bg-amber-50 border-amber-200 text-amber-900' 
+              : 'bg-red-50 border-red-200 text-red-900'
+          }`}>
+            <div className="flex items-center gap-3">
+              {isOfflineMode ? (
+                <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0" />
+              ) : (
+                <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
+              )}
+              <div>
+                <p className="text-xs font-bold">{dbErrorMsg}</p>
+                {dbErrorMsg.toLowerCase().includes('login failed') && (
+                  <p className="text-[10px] text-slate-600 mt-0.5">
+                    Credencial rejeitada: verifique a variável <strong>DB_PASS</strong> no Azure App Service para o usuário <strong>adminsql</strong>.
+                  </p>
+                )}
+              </div>
+            </div>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={loadProducts}
+              className="flex-shrink-0 text-xs font-bold py-1.5 px-3 h-auto border-slate-300 hover:bg-slate-100"
+            >
+              <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+              Tentar Reconectar
+            </Button>
+          </div>
+        )}
+
         <div className="flex space-x-1 bg-slate-100 p-1 rounded-lg w-full md:w-auto self-start border border-slate-200">
           <button onClick={() => { setActiveTab('general'); setVisibleCount(24); }} className={`px-6 py-2 rounded-md text-sm font-bold transition-all ${activeTab === 'general' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>
             Catálogo Geral
@@ -402,47 +446,88 @@ export const Catalog: React.FC<CatalogProps> = ({ addToCart, cartCount = 0, navi
         </div>
       )}
 
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-        {currentDisplayProducts.slice(0, visibleCount).map((product, index) => (
-          <div 
-            key={product.id + index} 
-            ref={index === Math.min(visibleCount, currentDisplayProducts.length) - 1 ? lastElementRef : null}
-            className="bg-white rounded-2xl shadow-sm border border-slate-100 flex flex-col h-full overflow-hidden group hover:shadow-xl transition-all duration-300"
-          >
-            <div className="relative pt-[100%] bg-slate-50">
-              <img src={product.imageUrl} alt={product.description} className="absolute inset-0 w-full h-full object-contain p-4 group-hover:scale-105 transition-transform duration-500" />
-              <div className="absolute top-3 left-3 flex flex-col gap-1">
-                 <span className="bg-slate-900/90 text-white text-[8px] px-2 py-0.5 rounded font-black uppercase tracking-widest shadow-sm">{product.code}</span>
-                 {product.amperage && (
-                    <span className={`${getAmperageBadgeClass(product.amperage)} text-white text-[8px] px-2 py-0.5 rounded font-black uppercase tracking-widest shadow-sm`}>{product.amperage}</span>
-                 )}
+      {currentDisplayProducts.length > 0 ? (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          {currentDisplayProducts.slice(0, visibleCount).map((product, index) => (
+            <div 
+              key={product.id + index} 
+              ref={index === Math.min(visibleCount, currentDisplayProducts.length) - 1 ? lastElementRef : null}
+              className="bg-white rounded-2xl shadow-sm border border-slate-100 flex flex-col h-full overflow-hidden group hover:shadow-xl transition-all duration-300"
+            >
+              <div className="relative pt-[100%] bg-slate-50">
+                <img src={product.imageUrl} alt={product.description} className="absolute inset-0 w-full h-full object-contain p-4 group-hover:scale-105 transition-transform duration-500" />
+                <div className="absolute top-3 left-3 flex flex-col gap-1">
+                   <span className="bg-slate-900/90 text-white text-[8px] px-2 py-0.5 rounded font-black uppercase tracking-widest shadow-sm">{product.code}</span>
+                   {product.amperage && (
+                      <span className={`${getAmperageBadgeClass(product.amperage)} text-white text-[8px] px-2 py-0.5 rounded font-black uppercase tracking-widest shadow-sm`}>{product.amperage}</span>
+                   )}
+                </div>
+                <button onClick={() => setSelectedProductForInfo(product)} className="absolute top-3 right-3 bg-white/95 p-2 rounded-full shadow-lg hover:bg-blue-600 hover:text-white transition-all transform active:scale-90"><Info className="h-4 w-4"/></button>
               </div>
-              <button onClick={() => setSelectedProductForInfo(product)} className="absolute top-3 right-3 bg-white/95 p-2 rounded-full shadow-lg hover:bg-blue-600 hover:text-white transition-all transform active:scale-90"><Info className="h-4 w-4"/></button>
-            </div>
-            <div className="p-5 flex-grow flex flex-col">
-              <span className="text-[10px] font-black text-blue-600 uppercase mb-1 tracking-widest">{product.line}</span>
-              <h3 className="text-xs font-bold text-slate-800 mb-4 line-clamp-2 h-9 leading-relaxed">{product.description}</h3>
-              <div className="mt-auto flex flex-col gap-2">
-                 {activeTab === 'novara' && !isPickingModules ? (
-                   <Button variant="secondary" size="sm" className="w-full text-[9px] h-10 font-black uppercase tracking-widest bg-slate-800 hover:bg-slate-900" onClick={() => { setSelectedPlatesForKit(prev => [...prev, product]); handleAddToCart(product); setIsPickingModules(true); setVisibleCount(24); }}>
-                      <Settings2 className="h-3.5 w-3.5 mr-2"/> Escolher Módulos
-                   </Button>
-                 ) : (
-                   <>
-                     <Button variant="outline" size="sm" className="w-full text-[9px] font-black uppercase tracking-widest border-slate-200 h-9" onClick={() => setSelectedProductForInfo(product)}>
-                        <Info className="h-3.5 w-3.5 mr-2"/> Detalhes
+              <div className="p-5 flex-grow flex flex-col">
+                <span className="text-[10px] font-black text-blue-600 uppercase mb-1 tracking-widest">{product.line}</span>
+                <h3 className="text-xs font-bold text-slate-800 mb-4 line-clamp-2 h-9 leading-relaxed">{product.description}</h3>
+                <div className="mt-auto flex flex-col gap-2">
+                   {activeTab === 'novara' && !isPickingModules ? (
+                     <Button variant="secondary" size="sm" className="w-full text-[9px] h-10 font-black uppercase tracking-widest bg-slate-800 hover:bg-slate-900" onClick={() => { setSelectedPlatesForKit(prev => [...prev, product]); handleAddToCart(product); setIsPickingModules(true); setVisibleCount(24); }}>
+                        <Settings2 className="h-3.5 w-3.5 mr-2"/> Escolher Módulos
                      </Button>
-                     <Button variant={addedIds.includes(product.id) ? "secondary" : "primary"} className="w-full text-[9px] h-10 font-black uppercase tracking-widest" onClick={() => handleAddToCart(product)} disabled={addedIds.includes(product.id)}>
-                        {addedIds.includes(product.id) ? <Check className="h-4 w-4 mr-2"/> : <Plus className="h-4 w-4 mr-2"/>}
-                        {addedIds.includes(product.id) ? "No Carrinho" : (activeTab === 'novara' ? "Add Módulo" : "Adicionar")}
-                     </Button>
-                   </>
-                 )}
+                   ) : (
+                     <>
+                       <Button variant="outline" size="sm" className="w-full text-[9px] font-black uppercase tracking-widest border-slate-200 h-9" onClick={() => setSelectedProductForInfo(product)}>
+                          <Info className="h-3.5 w-3.5 mr-2"/> Detalhes
+                       </Button>
+                       <Button variant={addedIds.includes(product.id) ? "secondary" : "primary"} className="w-full text-[9px] h-10 font-black uppercase tracking-widest" onClick={() => handleAddToCart(product)} disabled={addedIds.includes(product.id)}>
+                          {addedIds.includes(product.id) ? <Check className="h-4 w-4 mr-2"/> : <Plus className="h-4 w-4 mr-2"/>}
+                          {addedIds.includes(product.id) ? "No Carrinho" : (activeTab === 'novara' ? "Add Módulo" : "Adicionar")}
+                       </Button>
+                     </>
+                   )}
+                </div>
               </div>
             </div>
+          ))}
+        </div>
+      ) : !loading ? (
+        <div className="bg-white rounded-3xl p-10 border border-slate-200 text-center shadow-sm max-w-xl mx-auto my-8">
+          <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <Database className="w-8 h-8" />
           </div>
-        ))}
-      </div>
+          <h3 className="text-lg font-black text-slate-900 mb-2">
+            {dbErrorMsg ? "Comunicação com o Banco de Dados" : "Nenhum Produto Encontrado"}
+          </h3>
+          <p className="text-xs text-slate-600 mb-6 leading-relaxed max-w-md mx-auto">
+            {dbErrorMsg 
+              ? `${dbErrorMsg}`
+              : "Nenhum produto corresponde aos filtros e termos de busca aplicados."}
+          </p>
+
+          {dbErrorMsg && dbErrorMsg.toLowerCase().includes('login failed') && (
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-left text-xs text-slate-700 mb-6">
+              <p className="font-bold text-slate-900 mb-2 flex items-center gap-1.5">
+                <Info className="w-4 h-4 text-blue-600 flex-shrink-0" /> Como resolver no Azure Portal:
+              </p>
+              <ol className="list-decimal list-inside space-y-1.5 text-[11px] text-slate-600">
+                <li>Acesse <strong>portal.azure.com</strong> e abra o <strong>App Service (dicompel-configurador)</strong>.</li>
+                <li>No menu lateral, vá em <strong>Configuração</strong> &gt; <strong>Variáveis de ambiente</strong>.</li>
+                <li>Adicione ou edite a variável <strong>DB_PASS</strong> com a senha configurada no servidor SQL <strong>configurador-produto-sql</strong>.</li>
+                <li>Salve as alterações e reinicie o App Service.</li>
+              </ol>
+            </div>
+          )}
+
+          <div className="flex flex-wrap justify-center gap-3">
+            <Button onClick={loadProducts} className="font-bold text-xs uppercase px-6">
+              <RefreshCw className="w-4 h-4 mr-2" /> Tentar Reconectar
+            </Button>
+            {searchTerm || selectedCategory !== 'all' || selectedLine !== 'all' || selectedColor !== 'all' ? (
+              <Button variant="outline" onClick={() => { setSearchTerm(''); setSelectedCategory('all'); setSelectedLine('all'); setSelectedColor('all'); }} className="text-xs font-bold">
+                Limpar Filtros
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       {/* MODAL INFO PRODUTO (Corrigido) */}
       {selectedProductForInfo && (

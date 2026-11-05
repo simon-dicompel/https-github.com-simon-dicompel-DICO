@@ -5,8 +5,27 @@ const API_BASE = '/api';
 export const productService = {
   getAll: async (): Promise<Product[]> => {
     const res = await fetch(`${API_BASE}/products`);
-    if (!res.ok) throw new Error('Falha ao buscar produtos');
-    return res.json();
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({}));
+      const msg = errorData.details || errorData.error || 'Falha ao buscar produtos';
+      throw new Error(msg);
+    }
+    const data = await res.json();
+    if (Array.isArray(data) && data.length > 0) {
+      try {
+        localStorage.setItem('dicompel_cached_products', JSON.stringify(data));
+      } catch (e) {
+        // Ignora erros de cota do localStorage
+      }
+    }
+    return data;
+  },
+  getCached: (): Product[] => {
+    try {
+      const saved = localStorage.getItem('dicompel_cached_products');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return [];
   },
   create: async (product: Omit<Product, 'id'>): Promise<Product> => {
     const res = await fetch(`${API_BASE}/products`, {

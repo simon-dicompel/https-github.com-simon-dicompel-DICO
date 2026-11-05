@@ -12,39 +12,99 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// --- PARSER DE CONNECTION STRING DO AZURE ---
+function parseMssqlConnectionString(connStr: string) {
+    const parsed: any = {};
+    if (!connStr || typeof connStr !== 'string') return parsed;
+    
+    // Suporte a connection string no formato Server=tcp:...;Database=...;User ID=...;Password=...
+    const parts = connStr.split(';').map(p => p.trim()).filter(Boolean);
+    for (const part of parts) {
+        const eqIdx = part.indexOf('=');
+        if (eqIdx === -1) continue;
+        const key = part.substring(0, eqIdx).trim().toLowerCase();
+        const val = part.substring(eqIdx + 1).trim().replace(/^["']|["']$/g, '');
+        
+        if (['server', 'data source', 'addr', 'address', 'network address'].includes(key)) {
+            const clean = val.replace(/^tcp:/i, '');
+            const [srv, portStr] = clean.split(',');
+            parsed.server = srv;
+            if (portStr) parsed.port = parseInt(portStr, 10);
+        } else if (['initial catalog', 'database'].includes(key)) {
+            parsed.database = val;
+        } else if (['user id', 'uid', 'user'].includes(key)) {
+            parsed.user = val;
+        } else if (['password', 'pwd'].includes(key)) {
+            parsed.password = val;
+        } else if (key === 'port') {
+            parsed.port = parseInt(val, 10);
+        }
+    }
+    return parsed;
+}
+
+function findAzureConnectionString(): string | null {
+    for (const [key, val] of Object.entries(process.env)) {
+        if (!val || typeof val !== 'string') continue;
+        if (
+            key.startsWith('SQLAZURECONNSTR_') ||
+            key.startsWith('SQLCONNSTR_') ||
+            key.startsWith('CUSTOMCONNSTR_') ||
+            key === 'AZURE_SQL_CONNECTIONSTRING' ||
+            key === 'DATABASE_URL' ||
+            key === 'MSSQL_CONNECTION_STRING' ||
+            key === 'DB_CONNECTION_STRING'
+        ) {
+            return val;
+        }
+    }
+    return null;
+}
+
+const azureConnParsed = parseMssqlConnectionString(findAzureConnectionString() || '');
+
 // Configuração MSSQL
-const dbConfig = {
+const cleanEnv = (val?: string) => (val || '').trim().replace(/^["']|["']$/g, '');
+
+const dbConfig: sql.config = {
     user: (
-        process.env.DATABASE_USER || 
-        process.env.DB_USER || 
-        process.env.DB_USERNAME || 
-        process.env.USUARIO_DO_BANCO_DE_DADOS || 
-        process.env['USUÁRIO_DO_BANCO_DE_DADOS'] || 
+        azureConnParsed.user ||
+        cleanEnv(process.env.DATABASE_USER) || 
+        cleanEnv(process.env.DB_USER) || 
+        cleanEnv(process.env.DB_USERNAME) || 
+        cleanEnv(process.env.USUARIO_DO_BANCO_DE_DADOS) || 
+        cleanEnv(process.env['USUÁRIO_DO_BANCO_DE_DADOS']) || 
         'adminsql'
-    ).trim(),
+    ),
     password: (
-        process.env.DATABASE_PASSWORD || 
-        process.env.DATABASE_PASS || 
-        process.env.DB_PASS || 
-        process.env.DB_PASSWORD || 
-        process.env.SENHA_DO_BANCO_DE_DADOS ||
+        azureConnParsed.password ||
+        cleanEnv(process.env.DATABASE_PASSWORD) || 
+        cleanEnv(process.env.DATABASE_PASS) || 
+        cleanEnv(process.env.DB_PASS) || 
+        cleanEnv(process.env.DB_PASSWORD) || 
+        cleanEnv(process.env.SQL_PASSWORD) || 
+        cleanEnv(process.env.MSSQL_PASSWORD) || 
+        cleanEnv(process.env.AZURE_SQL_PASSWORD) || 
+        cleanEnv(process.env.SENHA_DO_BANCO_DE_DADOS) ||
         'Dicompel!$$'
-    ).trim(),
+    ),
     server: (
-        process.env.DATABASE_SERVER || 
-        process.env.DB_HOST || 
-        process.env.DB_SERVER ||
+        azureConnParsed.server ||
+        cleanEnv(process.env.DATABASE_SERVER) || 
+        cleanEnv(process.env.DB_HOST) || 
+        cleanEnv(process.env.DB_SERVER) ||
         'configurador-produto-sql.database.windows.net'
-    ).trim().replace(/,$/, '').replace('tcp:', ''),
+    ).replace(/,$/, '').replace(/^tcp:/i, ''),
     database: (
-        process.env.DATABASE_NAME || 
-        process.env.DB_NAME || 
-        process.env.NOME_DO_BANCO_DE_DADOS || 
+        azureConnParsed.database ||
+        cleanEnv(process.env.DATABASE_NAME) || 
+        cleanEnv(process.env.DB_NAME) || 
+        cleanEnv(process.env.NOME_DO_BANCO_DE_DADOS) || 
         'configurador-produto'
-    ).trim(),
-    port: parseInt(process.env.DB_PORT || '1433'),
-    connectionTimeout: 5000, // Falha rápido no Vercel em vez de 500 (Timeout)
-    requestTimeout: 10000,
+    ),
+    port: azureConnParsed.port || parseInt(process.env.DB_PORT || '1433', 10),
+    connectionTimeout: 8000,
+    requestTimeout: 15000,
     options: {
         encrypt: true,
         trustServerCertificate: true
@@ -64,6 +124,8 @@ console.log(`>> [INFO] Iniciando servidor...`);
 console.log(`>> [INFO] Porta: ${PORT}`);
 console.log(`>> [INFO] Node Env: ${process.env.NODE_ENV}`);
 console.log(`>> [INFO] DB Server: ${dbConfig.server}`);
+console.log(`>> [INFO] DB User: ${dbConfig.user}`);
+console.log(`>> [INFO] DB Database: ${dbConfig.database}`);
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
@@ -74,30 +136,81 @@ app.get("/favicon.ico", (req, res) => res.status(204).end());
 // Pool de conexão (Global)
 let pool: sql.ConnectionPool | null = null;
 let dbError: string | null = null;
+let lastUsedConfig: any = null;
 
-// Função para obter o pool de conexão de forma segura
+// Função para obter o pool de conexão de forma segura com multi-estratégia (Azure SQL)
 const getPool = async () => {
     if (pool && pool.connected) return pool;
     
-    console.log(`>> [DB] Tentando conectar/reconectar ao servidor: ${dbConfig.server}`);
-    try {
-        pool = await sql.connect(dbConfig);
-        console.log('>> Sucesso: Conectado ao Azure SQL Server (MSSQL)');
-        dbError = null;
-        return pool;
-    } catch (err: any) {
-        dbError = err.message;
-        if (err.code === 'ETIMEOUT') {
-            dbError = "CONNECTION TIMEOUT: Provável bloqueio de Firewall no Azure SQL. Certifique-se de permitir 'Serviços do Azure' no painel do banco de dados.";
-        }
-        console.error('>> ERRO AO CONECTAR AO BANCO:', dbError);
-        pool = null;
-        throw err;
+    // Prepara estratégias de conexão
+    const candidates: Array<{ label: string; config: sql.config }> = [];
+
+    // Candidato 1: Configuração padrão
+    candidates.push({ label: `Padrão (${dbConfig.user})`, config: { ...dbConfig } });
+
+    // Candidato 2: Azure SQL muitas vezes requer 'username@servername'
+    const shortServer = (dbConfig.server || '').split('.')[0].replace(/^tcp:/i, '');
+    if (dbConfig.user && !dbConfig.user.includes('@') && shortServer) {
+        candidates.push({
+            label: `Azure @servername (${dbConfig.user}@${shortServer})`,
+            config: {
+                ...dbConfig,
+                user: `${dbConfig.user}@${shortServer}`
+            }
+        });
     }
+
+    // Candidato 3: Se senha default Dicompel!$$ falhar, testar sem $$ (caso expandido no shell)
+    if (dbConfig.password === 'Dicompel!$$') {
+        candidates.push({
+            label: `Variação de senha Dicompel!`,
+            config: { ...dbConfig, password: 'Dicompel!' }
+        });
+        if (shortServer) {
+            candidates.push({
+                label: `Azure @servername + Dicompel!`,
+                config: { ...dbConfig, user: `${dbConfig.user}@${shortServer}`, password: 'Dicompel!' }
+            });
+        }
+    }
+
+    let lastError: any = null;
+
+    for (const candidate of candidates) {
+        try {
+            console.log(`>> [DB] Tentando conexão: ${candidate.label} em ${candidate.config.server}...`);
+            const p = await sql.connect(candidate.config);
+            console.log(`>> [DB] Sucesso: Conectado ao Azure SQL Server via [${candidate.label}]`);
+            pool = p;
+            dbError = null;
+            lastUsedConfig = candidate.config;
+            dbConfig.user = candidate.config.user; // memoriza formato correto
+            return pool;
+        } catch (err: any) {
+            lastError = err;
+            console.warn(`>> [DB] Falha na tentativa [${candidate.label}]: ${err.message} (code: ${err.code})`);
+            
+            // Se for ETIMEOUT / Firewall, tentar os outros candidatos não vai adiantar
+            if (err.code === 'ETIMEOUT') {
+                break;
+            }
+        }
+    }
+
+    dbError = lastError?.message || "Falha desconhecida ao conectar ao banco de dados";
+    if (lastError?.code === 'ETIMEOUT') {
+        dbError = "CONNECTION TIMEOUT: Provável bloqueio de Firewall no Azure SQL. Certifique-se de permitir 'Serviços do Azure' no painel do banco de dados.";
+    } else if (lastError?.code === 'ELOGIN') {
+        dbError = `Falha de autenticação no Azure SQL: ${lastError.message}. Verifique a variável DB_PASS no App Service.`;
+    }
+    
+    console.error('>> ERRO FINAL AO CONECTAR AO BANCO:', dbError);
+    pool = null;
+    throw lastError;
 };
 
 // Inicia conexão em background (quente), mas as rotas devem usar getPool()
-getPool().catch(err => console.error("Initial connection failed, will retry on request."));
+getPool().catch(() => console.log(">> Conexão inicial em background não completada, novas requisições tentarão novamente."));
 
 // DIAGNOSTIC ENDPOINT (Critical for debugging production)
 app.get("/api/db-check", async (req, res) => {
@@ -112,21 +225,36 @@ app.get("/api/db-check", async (req, res) => {
             duration_ms: Date.now() - startTime,
             server: dbConfig.server,
             database: result.recordset[0].db,
+            user_used: lastUsedConfig?.user || dbConfig.user,
             env: {
                 user_present: !!dbConfig.user,
                 pass_present: !!dbConfig.password,
+                is_custom_pass: dbConfig.password !== 'Dicompel!$$',
+                pass_length: dbConfig.password ? dbConfig.password.length : 0,
+                has_azure_conn_str: !!findAzureConnectionString(),
                 node_env: process.env.NODE_ENV
             }
         });
     } catch (err: any) {
         console.error(">> Erro no diagnóstico:", err);
+        const isLoginErr = err.code === 'ELOGIN' || (err.message && err.message.toLowerCase().includes('login failed'));
+        
         res.status(500).json({
             status: 'error',
             duration_ms: Date.now() - startTime,
             message: err.message,
-            code: err.code, // Ex: 'ETIMEOUT' indica Firewall
-            state: err.state,
-            help: "Se o código for ETIMEOUT, verifique o Firewall do Azure para permitir o IP deste servidor."
+            code: err.code,
+            diagnostics: {
+                server: dbConfig.server,
+                database: dbConfig.database,
+                user_attempted: dbConfig.user,
+                is_custom_password: dbConfig.password !== 'Dicompel!$$',
+                password_length: dbConfig.password ? dbConfig.password.length : 0,
+                found_azure_conn_str: !!findAzureConnectionString()
+            },
+            help: isLoginErr 
+                ? "Erro de autenticação: O Azure SQL rejeitou o usuário/senha. Acesse o Portal do Azure > App Service (dicompel-configurador) > Configuração / Variáveis de ambiente e defina DB_PASS com a senha correta configurada no servidor SQL configurador-produto-sql."
+                : "Se o código for ETIMEOUT, verifique o Firewall do Azure para permitir conexões de serviços Azure."
         });
     }
 });
@@ -282,9 +410,13 @@ app.get("/api/db-check", async (req, res) => {
             connection: isConnected,
             connected: isConnected,
             error: dbError,
+            user_used: lastUsedConfig?.user || dbConfig.user,
+            server: dbConfig.server,
             env_status: {
                 DB_USER: dbConfig.user ? 'OK' : 'MISSING',
-                DB_SERVER: dbConfig.server ? 'OK' : 'MISSING'
+                DB_PASS: dbConfig.password ? 'OK' : 'MISSING',
+                DB_SERVER: dbConfig.server ? 'OK' : 'MISSING',
+                HAS_AZURE_CONN_STR: !!findAzureConnectionString()
             }
         };
         
