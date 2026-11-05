@@ -28,6 +28,7 @@ interface AISearchResult {
 export const Catalog: React.FC<CatalogProps> = ({ addToCart, cartCount = 0, navigate }) => {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [dbError, setDbError] = useState<string | null>(null);
   const [addedIds, setAddedIds] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<'general' | 'novara'>('general');
   const [visibleCount, setVisibleCount] = useState(24);
@@ -80,11 +81,12 @@ export const Catalog: React.FC<CatalogProps> = ({ addToCart, cartCount = 0, navi
   const loadProducts = async () => {
     try {
       setLoading(true);
+      setDbError(null);
       const data = await productService.getAll();
       setProducts(data || []);
     } catch (e: any) {
       console.error("Erro ao carregar catálogo:", e);
-      alert(`Erro ao carregar produtos: ${e.message}. Verifique a conexão com o banco de dados.`);
+      setDbError(e.message || "Erro ao conectar ao banco de dados.");
     } finally {
       setLoading(false);
     }
@@ -301,6 +303,22 @@ export const Catalog: React.FC<CatalogProps> = ({ addToCart, cartCount = 0, navi
             </Button>
           </div>
         </div>
+
+        {dbError && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-amber-900 shadow-sm animate-in fade-in">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-xs font-bold text-amber-950">Aguardando liberação no Firewall do Azure SQL</p>
+                <p className="text-[11px] text-amber-800 mt-0.5 leading-relaxed">{dbError}</p>
+                <p className="text-[10px] text-amber-700 mt-1 font-medium">Após liberar o acesso no Portal Azure (leva até 5 minutos), clique no botão ao lado para carregar os produtos.</p>
+              </div>
+            </div>
+            <Button size="sm" variant="outline" className="text-xs bg-white border-amber-300 hover:bg-amber-100 flex-shrink-0" onClick={loadProducts}>
+              Tentar Conectar Novamente
+            </Button>
+          </div>
+        )}
 
         <div className="flex space-x-1 bg-slate-100 p-1 rounded-lg w-full md:w-auto self-start border border-slate-200">
           <button onClick={() => { setActiveTab('general'); setVisibleCount(24); }} className={`px-6 py-2 rounded-md text-sm font-bold transition-all ${activeTab === 'general' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>
