@@ -502,15 +502,30 @@ export const Catalog: React.FC<CatalogProps> = ({ addToCart, cartCount = 0, navi
               : "Nenhum produto corresponde aos filtros e termos de busca aplicados."}
           </p>
 
+          {dbErrorMsg && (dbErrorMsg.includes('not allowed to access') || dbErrorMsg.includes('Cannot open server') || dbErrorMsg.includes('sp_set_firewall_rule')) && (
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-left text-xs text-amber-900 mb-6">
+              <p className="font-bold text-amber-950 mb-2 flex items-center gap-1.5">
+                <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" /> Bloqueio de Firewall no Azure SQL:
+              </p>
+              <ol className="list-decimal list-inside space-y-1.5 text-[11px] text-amber-900">
+                <li>Acesse <strong>portal.azure.com</strong> e abra o <strong>SQL Server (configurador-produto-sql)</strong>.</li>
+                <li>No menu lateral em <strong>Segurança</strong>, clique em <strong>Rede</strong> (ou <em>Firewalls e redes virtuais</em>).</li>
+                <li>Em <strong>Exceções</strong>, marque a opção <strong>"Permitir que serviços e recursos do Azure acessem este servidor"</strong>.</li>
+                <li>Em <strong>Regras de Firewall</strong>, adicione uma regra (Regra: <code>LiberarAcesso</code>, Início: <code>0.0.0.0</code>, Fim: <code>255.255.255.255</code>) para permitir conexões externas/desenvolvimento.</li>
+                <li>Clique em <strong>Salvar</strong> no topo e aguarde 1 a 2 minutos para aplicar.</li>
+              </ol>
+            </div>
+          )}
+
           {dbErrorMsg && dbErrorMsg.toLowerCase().includes('login failed') && (
             <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-left text-xs text-slate-700 mb-6">
               <p className="font-bold text-slate-900 mb-2 flex items-center gap-1.5">
-                <Info className="w-4 h-4 text-blue-600 flex-shrink-0" /> Como resolver no Azure Portal:
+                <Info className="w-4 h-4 text-blue-600 flex-shrink-0" /> Como resolver credenciais no Azure Portal:
               </p>
               <ol className="list-decimal list-inside space-y-1.5 text-[11px] text-slate-600">
                 <li>Acesse <strong>portal.azure.com</strong> e abra o <strong>App Service (dicompel-configurador)</strong>.</li>
                 <li>No menu lateral, vá em <strong>Configuração</strong> &gt; <strong>Variáveis de ambiente</strong>.</li>
-                <li>Adicione ou edite a variável <strong>DB_PASS</strong> com a senha configurada no servidor SQL <strong>configurador-produto-sql</strong>.</li>
+                <li>Verifique se <strong>DATABASE_PASSWORD</strong> ou <strong>DB_PASS</strong> correspondem à senha do usuário <strong>adminsql</strong>.</li>
                 <li>Salve as alterações e reinicie o App Service.</li>
               </ol>
             </div>

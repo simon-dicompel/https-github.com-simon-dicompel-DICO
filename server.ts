@@ -68,16 +68,15 @@ const cleanEnv = (val?: string) => (val || '').trim().replace(/^["']|["']$/g, ''
 
 const dbConfig: sql.config = {
     user: (
-        azureConnParsed.user ||
         cleanEnv(process.env.DATABASE_USER) || 
         cleanEnv(process.env.DB_USER) || 
         cleanEnv(process.env.DB_USERNAME) || 
         cleanEnv(process.env.USUARIO_DO_BANCO_DE_DADOS) || 
         cleanEnv(process.env['USUÁRIO_DO_BANCO_DE_DADOS']) || 
+        azureConnParsed.user ||
         'adminsql'
     ),
     password: (
-        azureConnParsed.password ||
         cleanEnv(process.env.DATABASE_PASSWORD) || 
         cleanEnv(process.env.DATABASE_PASS) || 
         cleanEnv(process.env.DB_PASS) || 
@@ -86,23 +85,23 @@ const dbConfig: sql.config = {
         cleanEnv(process.env.MSSQL_PASSWORD) || 
         cleanEnv(process.env.AZURE_SQL_PASSWORD) || 
         cleanEnv(process.env.SENHA_DO_BANCO_DE_DADOS) ||
-        'Dicompel#Sql2026!'
+        'Dicompel&&2026'
     ),
     server: (
-        azureConnParsed.server ||
         cleanEnv(process.env.DATABASE_SERVER) || 
         cleanEnv(process.env.DB_HOST) || 
         cleanEnv(process.env.DB_SERVER) ||
+        azureConnParsed.server ||
         'configurador-produto-sql.database.windows.net'
     ).replace(/,$/, '').replace(/^tcp:/i, ''),
     database: (
-        azureConnParsed.database ||
         cleanEnv(process.env.DATABASE_NAME) || 
         cleanEnv(process.env.DB_NAME) || 
         cleanEnv(process.env.NOME_DO_BANCO_DE_DADOS) || 
+        azureConnParsed.database ||
         'configurador-produto'
     ),
-    port: azureConnParsed.port || parseInt(process.env.DB_PORT || '1433', 10),
+    port: parseInt(process.env.DB_PORT || '1433', 10) || azureConnParsed.port || 1433,
     connectionTimeout: 8000,
     requestTimeout: 15000,
     options: {
@@ -117,11 +116,12 @@ const dbConfig: sql.config = {
 };
 
 const app = express();
-const PORT = parseInt(process.env.PORT || '3000', 10);
+// Suporte a porta do Azure App Service (WEBSITES_PORT=8000 ou PORT)
+const PORT = parseInt(process.env.PORT || process.env.WEBSITES_PORT || '3000', 10);
 
 // --- LOGS DE INICIALIZAÇÃO PARA DIAGNÓSTICO ---
 console.log(`>> [INFO] Iniciando servidor...`);
-console.log(`>> [INFO] Porta: ${PORT}`);
+console.log(`>> [INFO] Porta ativa: ${PORT}`);
 console.log(`>> [INFO] Node Env: ${process.env.NODE_ENV}`);
 console.log(`>> [INFO] DB Server: ${dbConfig.server}`);
 console.log(`>> [INFO] DB User: ${dbConfig.user}`);
@@ -142,46 +142,40 @@ let lastUsedConfig: any = null;
 const getPool = async () => {
     if (pool && pool.connected) return pool;
     
-    // Prepara estratégias de conexão
-    const candidates: Array<{ label: string; config: sql.config }> = [];
+    // Lista de senhas potenciais para testar (priorizando o que está no portal do Azure)
+    const passwordsToTry = [
+        cleanEnv(process.env.DATABASE_PASSWORD),
+        'Dicompel&&2026',
+        'Dicompel#Sql2026!',
+        cleanEnv(process.env.DB_PASS),
+        azureConnParsed.password,
+        'Dicompel!$$'
+    ].filter((p): p is string => Boolean(p && typeof p === 'string' && p.trim().length > 0));
+    
+    // Deduplica senhas mantendo a ordem de prioridade
+    const uniquePasswords = Array.from(new Set(passwordsToTry));
+
     const shortServer = (dbConfig.server || '').split('.')[0].replace(/^tcp:/i, '');
-    const userWithServer = dbConfig.user && !dbConfig.user.includes('@') && shortServer
-        ? `${dbConfig.user}@${shortServer}`
-        : dbConfig.user;
-
-    // Estratégia 1: Nova senha Dicompel#Sql2026! (Padrão)
-    candidates.push({ 
-        label: `Nova Senha (Dicompel#Sql2026!) - ${dbConfig.user}`, 
-        config: { ...dbConfig, password: 'Dicompel#Sql2026!' } 
-    });
-
-    // Estratégia 2: Nova Senha com formato Azure @servername
-    if (shortServer && userWithServer !== dbConfig.user) {
-        candidates.push({
-            label: `Nova Senha (Dicompel#Sql2026!) - ${userWithServer}`,
-            config: { ...dbConfig, user: userWithServer, password: 'Dicompel#Sql2026!' }
-        });
+    const baseUser = dbConfig.user || 'adminsql';
+    const usersToTry = [baseUser];
+    if (shortServer && !baseUser.includes('@')) {
+        usersToTry.push(`${baseUser}@${shortServer}`);
     }
 
-    // Estratégia 3: Senha das variáveis de ambiente (se diferente)
-    if (dbConfig.password && dbConfig.password !== 'Dicompel#Sql2026!') {
-        candidates.push({ 
-            label: `Configuração Env (${dbConfig.user})`, 
-            config: { ...dbConfig } 
-        });
-        if (shortServer && userWithServer !== dbConfig.user) {
+    // Prepara candidatos combinando usuário e senhas
+    const candidates: Array<{ label: string; config: sql.config }> = [];
+    for (const pwd of uniquePasswords) {
+        for (const usr of usersToTry) {
             candidates.push({
-                label: `Configuração Env (${userWithServer})`,
-                config: { ...dbConfig, user: userWithServer }
+                label: `User [${usr}] / Pass [${pwd.substring(0, 3)}***${pwd.slice(-2)}]`,
+                config: {
+                    ...dbConfig,
+                    user: usr,
+                    password: pwd
+                }
             });
         }
     }
-
-    // Estratégia 4: Senha legada anterior (Dicompel!$$)
-    candidates.push({
-        label: `Senha anterior (Dicompel!$$) - ${dbConfig.user}`,
-        config: { ...dbConfig, password: 'Dicompel!$$' }
-    });
 
     let lastError: any = null;
 
@@ -199,7 +193,7 @@ const getPool = async () => {
             lastError = err;
             console.warn(`>> [DB] Falha na tentativa [${candidate.label}]: ${err.message} (code: ${err.code})`);
             
-            // Se for ETIMEOUT / Firewall, tentar os outros candidatos não vai adiantar
+            // Se for ETIMEOUT / Firewall bloqueando IP, tentar outras senhas não vai adiantar
             if (err.code === 'ETIMEOUT') {
                 break;
             }
@@ -246,24 +240,36 @@ app.get("/api/db-check", async (req, res) => {
         });
     } catch (err: any) {
         console.error(">> Erro no diagnóstico:", err);
-        const isLoginErr = err.code === 'ELOGIN' || (err.message && err.message.toLowerCase().includes('login failed'));
+        const isFirewallErr = !!(err.message && (
+            err.message.includes('not allowed to access the server') || 
+            err.message.includes('sp_set_firewall_rule') ||
+            err.message.includes('Cannot open server') ||
+            err.code === 'ETIMEOUT'
+        ));
+        const isPasswordErr = !isFirewallErr && (
+            (err.message && err.message.toLowerCase().includes('login failed')) || 
+            err.code === 'ELOGIN'
+        );
         
         res.status(500).json({
             status: 'error',
             duration_ms: Date.now() - startTime,
             message: err.message,
             code: err.code,
+            type: isFirewallErr ? 'FIREWALL_BLOCKED' : (isPasswordErr ? 'INVALID_CREDENTIALS' : 'UNKNOWN'),
             diagnostics: {
                 server: dbConfig.server,
                 database: dbConfig.database,
                 user_attempted: dbConfig.user,
-                is_custom_password: dbConfig.password !== 'Dicompel#Sql2026!',
+                is_custom_password: dbConfig.password !== 'Dicompel&&2026',
                 password_length: dbConfig.password ? dbConfig.password.length : 0,
                 found_azure_conn_str: !!findAzureConnectionString()
             },
-            help: isLoginErr 
-                ? "Erro de autenticação: O Azure SQL rejeitou o usuário/senha. Acesse o Portal do Azure > App Service (dicompel-configurador) > Configuração / Variáveis de ambiente e defina DB_PASS com a senha correta configurada no servidor SQL configurador-produto-sql."
-                : "Se o código for ETIMEOUT, verifique o Firewall do Azure para permitir conexões de serviços Azure."
+            help: isFirewallErr
+                ? "Bloqueio de Firewall do Azure SQL: O IP não tem permissão para acessar o servidor. No Portal do Azure (portal.azure.com) > SQL Server 'configurador-produto-sql' > Rede / Firewall: 1) Marque 'Permitir que serviços do Azure acessem este servidor' e 2) Adicione uma regra de firewall (ex: Início 0.0.0.0 / Fim 255.255.255.255 para desenvolvimento)."
+                : (isPasswordErr
+                    ? "Erro de autenticação: O Azure SQL rejeitou o usuário/senha. Acesse o Portal do Azure > App Service (dicompel-configurador) > Configuração / Variáveis de ambiente e verifique DATABASE_PASSWORD ou DB_PASS."
+                    : "Erro na conexão com o banco de dados. Verifique a conectividade com o Azure SQL.")
         });
     }
 });

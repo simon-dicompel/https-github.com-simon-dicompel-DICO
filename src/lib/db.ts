@@ -15,7 +15,7 @@ const config: any = {
     process.env.DB_PASS || 
     process.env.DB_PASSWORD || 
     process.env.SENHA_DO_BANCO_DE_DADOS ||
-    'Dicompel#Sql2026!'
+    'Dicompel&&2026'
   ).trim(),
   database: (
     process.env.DATABASE_NAME || 
