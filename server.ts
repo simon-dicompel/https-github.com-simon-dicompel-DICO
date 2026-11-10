@@ -86,7 +86,7 @@ const dbConfig: sql.config = {
         cleanEnv(process.env.MSSQL_PASSWORD) || 
         cleanEnv(process.env.AZURE_SQL_PASSWORD) || 
         cleanEnv(process.env.SENHA_DO_BANCO_DE_DADOS) ||
-        'Dicompel!$$'
+        'Dicompel#Sql2026!'
     ),
     server: (
         azureConnParsed.server ||
@@ -144,35 +144,44 @@ const getPool = async () => {
     
     // Prepara estratégias de conexão
     const candidates: Array<{ label: string; config: sql.config }> = [];
-
-    // Candidato 1: Configuração padrão
-    candidates.push({ label: `Padrão (${dbConfig.user})`, config: { ...dbConfig } });
-
-    // Candidato 2: Azure SQL muitas vezes requer 'username@servername'
     const shortServer = (dbConfig.server || '').split('.')[0].replace(/^tcp:/i, '');
-    if (dbConfig.user && !dbConfig.user.includes('@') && shortServer) {
+    const userWithServer = dbConfig.user && !dbConfig.user.includes('@') && shortServer
+        ? `${dbConfig.user}@${shortServer}`
+        : dbConfig.user;
+
+    // Estratégia 1: Nova senha Dicompel#Sql2026! (Padrão)
+    candidates.push({ 
+        label: `Nova Senha (Dicompel#Sql2026!) - ${dbConfig.user}`, 
+        config: { ...dbConfig, password: 'Dicompel#Sql2026!' } 
+    });
+
+    // Estratégia 2: Nova Senha com formato Azure @servername
+    if (shortServer && userWithServer !== dbConfig.user) {
         candidates.push({
-            label: `Azure @servername (${dbConfig.user}@${shortServer})`,
-            config: {
-                ...dbConfig,
-                user: `${dbConfig.user}@${shortServer}`
-            }
+            label: `Nova Senha (Dicompel#Sql2026!) - ${userWithServer}`,
+            config: { ...dbConfig, user: userWithServer, password: 'Dicompel#Sql2026!' }
         });
     }
 
-    // Candidato 3: Se senha default Dicompel!$$ falhar, testar sem $$ (caso expandido no shell)
-    if (dbConfig.password === 'Dicompel!$$') {
-        candidates.push({
-            label: `Variação de senha Dicompel!`,
-            config: { ...dbConfig, password: 'Dicompel!' }
+    // Estratégia 3: Senha das variáveis de ambiente (se diferente)
+    if (dbConfig.password && dbConfig.password !== 'Dicompel#Sql2026!') {
+        candidates.push({ 
+            label: `Configuração Env (${dbConfig.user})`, 
+            config: { ...dbConfig } 
         });
-        if (shortServer) {
+        if (shortServer && userWithServer !== dbConfig.user) {
             candidates.push({
-                label: `Azure @servername + Dicompel!`,
-                config: { ...dbConfig, user: `${dbConfig.user}@${shortServer}`, password: 'Dicompel!' }
+                label: `Configuração Env (${userWithServer})`,
+                config: { ...dbConfig, user: userWithServer }
             });
         }
     }
+
+    // Estratégia 4: Senha legada anterior (Dicompel!$$)
+    candidates.push({
+        label: `Senha anterior (Dicompel!$$) - ${dbConfig.user}`,
+        config: { ...dbConfig, password: 'Dicompel!$$' }
+    });
 
     let lastError: any = null;
 
@@ -229,7 +238,7 @@ app.get("/api/db-check", async (req, res) => {
             env: {
                 user_present: !!dbConfig.user,
                 pass_present: !!dbConfig.password,
-                is_custom_pass: dbConfig.password !== 'Dicompel!$$',
+                is_custom_pass: dbConfig.password !== 'Dicompel#Sql2026!',
                 pass_length: dbConfig.password ? dbConfig.password.length : 0,
                 has_azure_conn_str: !!findAzureConnectionString(),
                 node_env: process.env.NODE_ENV
@@ -248,7 +257,7 @@ app.get("/api/db-check", async (req, res) => {
                 server: dbConfig.server,
                 database: dbConfig.database,
                 user_attempted: dbConfig.user,
-                is_custom_password: dbConfig.password !== 'Dicompel!$$',
+                is_custom_password: dbConfig.password !== 'Dicompel#Sql2026!',
                 password_length: dbConfig.password ? dbConfig.password.length : 0,
                 found_azure_conn_str: !!findAzureConnectionString()
             },
